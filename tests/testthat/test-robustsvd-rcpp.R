@@ -1,5 +1,5 @@
 library(testthat)
-library(rajiveutils)
+library(rajiveplus)
 
 # ---------------------------------------------------------------------------
 # Reference implementations (pure R, verbatim copy of original RobustSVD.R)
@@ -268,7 +268,7 @@ test_that("get_svd_robustH matches pure-R RobRSVD.all: no rank arg", {
   X      <- matrix(rnorm(m * n), m, n)
   sv0    <- svd(X)
   r_res   <- .RobRSVD_all_R(X, nrank = min(dim(X)), svdinit = sv0)
-  cpp_res <- rajiveutils:::get_svd_robustH(X)
+  cpp_res <- rajiveplus:::get_svd_robustH(X)
 
   expect_svd_equal(r_res, cpp_res, nrank = n, tol = 1e-7)
 })
@@ -279,7 +279,7 @@ test_that("get_svd_robustH matches pure-R RobRSVD.all: with rank arg", {
   X      <- matrix(rnorm(m * n), m, n)
   sv0    <- svd(X)
   r_res   <- .RobRSVD_all_R(X, nrank = nrank, svdinit = sv0)
-  cpp_res <- rajiveutils:::get_svd_robustH(X, rank = nrank)
+  cpp_res <- rajiveplus:::get_svd_robustH(X, rank = nrank)
 
   expect_svd_equal(r_res, cpp_res, nrank = nrank, tol = 1e-7)
 })

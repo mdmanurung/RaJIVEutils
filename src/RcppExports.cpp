@@ -13,7 +13,7 @@ Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 
 // RobRSVD1_cpp
 List RobRSVD1_cpp(const arma::mat& data, double sinit, const arma::vec& uinit, const arma::vec& vinit, double huberk, int niter, double tol);
-RcppExport SEXP _rajiveutils_RobRSVD1_cpp(SEXP dataSEXP, SEXP sinitSEXP, SEXP uinitSEXP, SEXP vinitSEXP, SEXP huberkSEXP, SEXP niterSEXP, SEXP tolSEXP) {
+RcppExport SEXP _rajiveplus_RobRSVD1_cpp(SEXP dataSEXP, SEXP sinitSEXP, SEXP uinitSEXP, SEXP vinitSEXP, SEXP huberkSEXP, SEXP niterSEXP, SEXP tolSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -30,7 +30,7 @@ END_RCPP
 }
 // RobRSVD_all_cpp
 List RobRSVD_all_cpp(const arma::mat& data, int nrank, double sinit1, const arma::vec& uinit1, const arma::vec& vinit1, double huberk, int niter, double tol);
-RcppExport SEXP _rajiveutils_RobRSVD_all_cpp(SEXP dataSEXP, SEXP nrankSEXP, SEXP sinit1SEXP, SEXP uinit1SEXP, SEXP vinit1SEXP, SEXP huberkSEXP, SEXP niterSEXP, SEXP tolSEXP) {
+RcppExport SEXP _rajiveplus_RobRSVD_all_cpp(SEXP dataSEXP, SEXP nrankSEXP, SEXP sinit1SEXP, SEXP uinit1SEXP, SEXP vinit1SEXP, SEXP huberkSEXP, SEXP niterSEXP, SEXP tolSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -48,12 +48,12 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
-    {"_rajiveutils_RobRSVD1_cpp", (DL_FUNC) &_rajiveutils_RobRSVD1_cpp, 7},
-    {"_rajiveutils_RobRSVD_all_cpp", (DL_FUNC) &_rajiveutils_RobRSVD_all_cpp, 8},
+    {"_rajiveplus_RobRSVD1_cpp", (DL_FUNC) &_rajiveplus_RobRSVD1_cpp, 7},
+    {"_rajiveplus_RobRSVD_all_cpp", (DL_FUNC) &_rajiveplus_RobRSVD_all_cpp, 8},
     {NULL, NULL, 0}
 };
 
-RcppExport void R_init_rajiveutils(DllInfo *dll) {
+RcppExport void R_init_rajiveplus(DllInfo *dll) {
     R_registerRoutines(dll, NULL, CallEntries, NULL, NULL);
     R_useDynamicSymbols(dll, FALSE);
 }

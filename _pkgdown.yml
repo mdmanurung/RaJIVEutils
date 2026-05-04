@@ -1,10 +1,10 @@
-url: https://mdmanurung.github.io/RaJIVEutils/
+url: https://mdmanurung.github.io/rajiveplus/
 
 template:
   bootstrap: 5
 
 home:
-  title: "rajiveutils: Robust Angle Based Joint and Individual Variation Explained"
+  title: "rajiveplus: Robust Angle Based Joint and Individual Variation Explained"
   description: >
     A robust alternative to the aJIVE method for the estimation of joint and
     individual components in the presence of outliers in multi-source data.
@@ -16,8 +16,16 @@ navbar:
   components:
     github:
       icon: fab fa-github fa-lg
-      href: https://github.com/mdmanurung/RaJIVEutils
+      href: https://github.com/mdmanurung/rajiveplus
       aria-label: GitHub
+
+articles:
+  - title: "Vignettes"
+    navbar: ~
+    contents:
+      - benchmarking
+      - jackstraw_scaling
+      - cll_application
 
 reference:
   - title: "Core decomposition"
@@ -100,4 +108,4 @@ reference:
   - title: "Package"
     desc: "Package-level documentation."
     contents:
-      - rajiveutils-package
+      - rajiveplus-package

@@ -2,10 +2,10 @@
 # Generator token: 10BE3573-1514-4C36-9D1C-5A225CD40393
 
 RobRSVD1_cpp <- function(data, sinit, uinit, vinit, huberk = 1.345, niter = 1000L, tol = 1e-5) {
-    .Call(`_rajiveutils_RobRSVD1_cpp`, data, sinit, uinit, vinit, huberk, niter, tol)
+    .Call(`_rajiveplus_RobRSVD1_cpp`, data, sinit, uinit, vinit, huberk, niter, tol)
 }
 
 RobRSVD_all_cpp <- function(data, nrank, sinit1, uinit1, vinit1, huberk = 1.345, niter = 1000L, tol = 1e-5) {
-    .Call(`_rajiveutils_RobRSVD_all_cpp`, data, nrank, sinit1, uinit1, vinit1, huberk, niter, tol)
+    .Call(`_rajiveplus_RobRSVD_all_cpp`, data, nrank, sinit1, uinit1, vinit1, huberk, niter, tol)
 }
 

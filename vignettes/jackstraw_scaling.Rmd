@@ -1,0 +1,364 @@
+---
+title: "Jackstraw Scaling Analysis"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Jackstraw Scaling Analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r}
+knitr::opts_chunk$set(
+  collapse  = TRUE,
+  comment   = "#>",
+  fig.width = 7,
+  fig.height = 4,
+  message   = FALSE,
+  warning   = FALSE
+)
+run_heavy <- TRUE   # set to TRUE once to regenerate .rds cache files
+data_dir  <- "data"
+```
+
+
+## Introduction
+
+`jackstraw_rajive()` identifies which variables (features) in each data
+block have statistically significant nonzero joint loadings after a RaJIVE
+decomposition.  The algorithm permutes a small fraction of each variable's
+observations, recomputes the decomposition, and accumulates null F-statistics
+for comparison against observed F-statistics.
+
+The computational cost scales with:
+
+- **n** (samples) — larger SVD; quadratic effect expected
+- **p** (features per block) — more F-statistics to compute per null replicate
+- **n_null** (null replicates) — linear effect; most controllable parameter
+
+This vignette benchmarks these three axes and provides a practical guide for
+choosing `n_null` given data size.
+
+---
+
+## Setup
+
+```{r}
+library(rajiveplus)
+library(peakRAM)
+library(ggplot2)
+```
+
+
+---
+
+## Time vs Sample Size (n)
+
+```{r}
+ns <- c(50L, 100L, 200L)
+
+time_n_rows <- lapply(ns, function(n_i) {
+  set.seed(42)
+  Y_i    <- ajive.data.sim(K = 2, rankJ = 2, rankA = c(5, 5),
+                           n = n_i, pks = c(500, 500))
+  blks_i <- Y_i$sim_data
+  fit_i  <- Rajive(blks_i, c(5, 5), joint_rank = 2L, num_cores = 2L)
+  t_i    <- system.time(
+    jackstraw_rajive(fit_i, blks_i, n_null = 10L)
+  )["elapsed"]
+  data.frame(n = n_i, elapsed = t_i)
+})
+time_n_df <- do.call(rbind, time_n_rows)
+saveRDS(time_n_df, file.path(data_dir, "jackstraw_time_vs_n.rds"))
+```
+
+```{r}
+time_n_df <- readRDS(file.path(data_dir, "jackstraw_time_vs_n.rds"))
+knitr::kable(time_n_df,
+             col.names = c("n (samples)", "Elapsed (s)"),
+             digits = 1,
+             caption = "jackstraw_rajive() elapsed time vs sample size (p=500, n_null=10)")
+```
+
+```{r}
+ggplot(time_n_df, aes(x = n, y = elapsed)) +
+  geom_line(colour = "#2166ac", linewidth = 1) +
+  geom_point(size = 2.5, colour = "#2166ac") +
+  labs(title    = "jackstraw_rajive() time vs sample size (n)",
+       subtitle = "K=2, p=500, joint_rank=2, n_null=10",
+       x = "Sample size (n)", y = "Elapsed time (s)") +
+  theme_bw()
+```
+
+
+---
+
+## Time vs Feature Count (p)
+
+```{r}
+ps <- c(100L, 500L, 1000L, 2000L)
+
+time_p_rows <- lapply(ps, function(p_i) {
+  set.seed(42)
+  Y_i    <- ajive.data.sim(K = 2, rankJ = 2, rankA = c(5, 5),
+                           n = 100, pks = c(p_i, p_i))
+  blks_i <- Y_i$sim_data
+  fit_i  <- Rajive(blks_i, c(5, 5), joint_rank = 2L, num_cores = 2L)
+  t_i    <- system.time(
+    jackstraw_rajive(fit_i, blks_i, n_null = 10L)
+  )["elapsed"]
+  data.frame(p = p_i, elapsed = t_i)
+})
+time_p_df <- do.call(rbind, time_p_rows)
+saveRDS(time_p_df, file.path(data_dir, "jackstraw_time_vs_p.rds"))
+```
+
+```{r}
+time_p_df <- readRDS(file.path(data_dir, "jackstraw_time_vs_p.rds"))
+knitr::kable(time_p_df,
+             col.names = c("p (features)", "Elapsed (s)"),
+             digits = 1,
+             caption = "jackstraw_rajive() elapsed time vs feature count (n=100, n_null=10)")
+```
+
+```{r}
+ggplot(time_p_df, aes(x = p, y = elapsed)) +
+  geom_line(colour = "#1b7837", linewidth = 1) +
+  geom_point(size = 2.5, colour = "#1b7837") +
+  scale_x_log10() +
+  labs(title    = "jackstraw_rajive() time vs feature count (p)",
+       subtitle = "K=2, n=100, joint_rank=2, n_null=10 (log x-axis)",
+       x = "Features per block (p)", y = "Elapsed time (s)") +
+  theme_bw()
+```
+
+
+---
+
+## Time vs n_null
+
+`n_null` is the most user-controllable parameter.  Its effect is nearly
+perfectly linear since the permutation loop is `n_null` iterations:
+
+```{r}
+nnulls <- c(5L, 10L, 25L, 50L)
+
+set.seed(42)
+Y_base    <- ajive.data.sim(K = 2, rankJ = 2, rankA = c(5, 5),
+                             n = 100, pks = c(500, 500))
+blks_base <- Y_base$sim_data
+fit_base  <- Rajive(blks_base, c(5, 5), joint_rank = 2L, num_cores = 2L)
+
+time_nnull_rows <- lapply(nnulls, function(nn) {
+  t_i <- system.time(
+    jackstraw_rajive(fit_base, blks_base, n_null = nn)
+  )["elapsed"]
+  data.frame(n_null = nn, elapsed = t_i)
+})
+time_nnull_df <- do.call(rbind, time_nnull_rows)
+saveRDS(time_nnull_df, file.path(data_dir, "jackstraw_time_vs_nnull.rds"))
+```
+
+```{r}
+time_nnull_df <- readRDS(file.path(data_dir, "jackstraw_time_vs_nnull.rds"))
+knitr::kable(time_nnull_df,
+             col.names = c("n_null", "Elapsed (s)"),
+             digits = 1,
+             caption = "jackstraw_rajive() elapsed time vs n_null (n=100, p=500)")
+```
+
+```{r}
+ggplot(time_nnull_df, aes(x = n_null, y = elapsed)) +
+  geom_line(colour = "#762a83", linewidth = 1) +
+  geom_point(size = 2.5, colour = "#762a83") +
+  labs(title    = "jackstraw_rajive() time vs n_null",
+       subtitle = "K=2, n=100, p=500, joint_rank=2",
+       x = "n_null (null replicates)", y = "Elapsed time (s)") +
+  theme_bw()
+```
+
+
+---
+
+## Memory (peakRAM)
+
+```{r}
+ram_n_rows <- lapply(c(50L, 100L, 200L), function(n_i) {
+  set.seed(42)
+  Y_i    <- ajive.data.sim(K = 2, rankJ = 2, rankA = c(5, 5),
+                           n = n_i, pks = c(500, 500))
+  blks_i <- Y_i$sim_data
+  fit_i  <- Rajive(blks_i, c(5, 5), joint_rank = 2L, num_cores = 2L)
+  mem_i  <- peakRAM::peakRAM(jackstraw_rajive(fit_i, blks_i, n_null = 10L))
+  data.frame(n = n_i, peak_ram_mb = mem_i$Peak_RAM_Used_MiB)
+})
+ram_n_df <- do.call(rbind, ram_n_rows)
+saveRDS(ram_n_df, file.path(data_dir, "jackstraw_ram_vs_n.rds"))
+```
+
+```{r}
+ram_p_rows <- lapply(c(100L, 500L, 1000L, 2000L), function(p_i) {
+  set.seed(42)
+  Y_i    <- ajive.data.sim(K = 2, rankJ = 2, rankA = c(5, 5),
+                           n = 100, pks = c(p_i, p_i))
+  blks_i <- Y_i$sim_data
+  fit_i  <- Rajive(blks_i, c(5, 5), joint_rank = 2L, num_cores = 2L)
+  mem_i  <- peakRAM::peakRAM(jackstraw_rajive(fit_i, blks_i, n_null = 10L))
+  data.frame(p = p_i, peak_ram_mb = mem_i$Peak_RAM_Used_MiB)
+})
+ram_p_df <- do.call(rbind, ram_p_rows)
+saveRDS(ram_p_df, file.path(data_dir, "jackstraw_ram_vs_p.rds"))
+```
+
+```{r}
+ram_n_df <- readRDS(file.path(data_dir, "jackstraw_ram_vs_n.rds"))
+ram_p_df <- readRDS(file.path(data_dir, "jackstraw_ram_vs_p.rds"))
+```
+
+```{r}
+p_ram_n <- ggplot(ram_n_df, aes(x = n, y = peak_ram_mb)) +
+  geom_line(colour = "#e08214", linewidth = 1) +
+  geom_point(size = 2.5, colour = "#e08214") +
+  labs(title = "Peak RAM vs n", x = "Sample size (n)", y = "Peak RAM (MiB)") +
+  theme_bw()
+
+p_ram_p <- ggplot(ram_p_df, aes(x = p, y = peak_ram_mb)) +
+  geom_line(colour = "#e08214", linewidth = 1) +
+  geom_point(size = 2.5, colour = "#e08214") +
+  scale_x_log10() +
+  labs(title = "Peak RAM vs p (log scale)", x = "Features per block (p)", y = "Peak RAM (MiB)") +
+  theme_bw()
+
+if (requireNamespace("patchwork", quietly = TRUE)) {
+  print(patchwork::wrap_plots(p_ram_n, p_ram_p, ncol = 2))
+} else {
+  print(p_ram_n); print(p_ram_p)
+}
+```
+
+
+---
+
+## profmem: Allocation Profile (Small Data)
+
+A `profmem` run on tiny data (`n=50, p=100`) to inspect which calls
+allocate most R-heap memory.  This runs fast enough for `eval=TRUE`:
+
+```{r}
+if (requireNamespace("profmem", quietly = TRUE)) {
+  set.seed(1)
+  Y_tiny    <- ajive.data.sim(K = 2, rankJ = 2, rankA = c(3, 3),
+                               n = 50, pks = c(100, 100))
+  blks_tiny <- Y_tiny$sim_data
+  fit_tiny  <- Rajive(blks_tiny, c(3, 3), joint_rank = 2L, num_cores = 1L)
+
+  pm <- profmem::profmem(jackstraw_rajive(fit_tiny, blks_tiny, n_null = 5L))
+
+  # Top 10 allocating calls by total bytes
+  pm_df <- as.data.frame(pm)
+  pm_df <- pm_df[!is.na(pm_df$bytes), ]
+  pm_agg <- aggregate(bytes ~ calls, data = pm_df, FUN = sum)
+  pm_top <- pm_agg[order(-pm_agg$bytes)[1:min(10, nrow(pm_agg))], ]
+  pm_top$MB <- round(pm_top$bytes / 1024^2, 2)
+  knitr::kable(pm_top[, c("calls", "MB")],
+               row.names = FALSE,
+               col.names = c("Call stack (truncated)", "Allocated (MiB)"),
+               caption   = "Top 10 allocating call stacks in jackstraw_rajive() (n=50, p=100, n_null=5)")
+} else {
+  message("profmem not installed; skipping allocation profile")
+}
+```
+
+
+---
+
+## profvis: Interactive Profile
+
+`profvis` returns an HTML widget incompatible with static pkgdown output.
+Run this interactively in an R session to explore the flame graph:
+
+```{r}
+# Run interactively only — not rendered in the vignette
+if (requireNamespace("profvis", quietly = TRUE)) {
+  set.seed(1)
+  Y_pv  <- ajive.data.sim(K = 2, rankJ = 2, rankA = c(5, 5),
+                           n = 100, pks = c(500, 500))
+  blks_pv <- Y_pv$sim_data
+  fit_pv  <- Rajive(blks_pv, c(5, 5), joint_rank = 2L, num_cores = 2L)
+  profvis::profvis(jackstraw_rajive(fit_pv, blks_pv, n_null = 10L))
+}
+```
+
+
+---
+
+## Summary: 2x2 Scaling Overview
+
+```{r}
+time_n_df  <- readRDS(file.path(data_dir, "jackstraw_time_vs_n.rds"))
+time_p_df  <- readRDS(file.path(data_dir, "jackstraw_time_vs_p.rds"))
+ram_n_df   <- readRDS(file.path(data_dir, "jackstraw_ram_vs_n.rds"))
+ram_p_df   <- readRDS(file.path(data_dir, "jackstraw_ram_vs_p.rds"))
+
+p_tn <- ggplot(time_n_df, aes(n, elapsed)) +
+  geom_line(colour = "#2166ac", linewidth = 1) + geom_point(size = 2) +
+  labs(title = "Time vs n", x = "n", y = "Elapsed (s)") + theme_bw()
+
+p_tp <- ggplot(time_p_df, aes(p, elapsed)) +
+  geom_line(colour = "#1b7837", linewidth = 1) + geom_point(size = 2) +
+  scale_x_log10() +
+  labs(title = "Time vs p (log scale)", x = "p", y = "Elapsed (s)") + theme_bw()
+
+p_rn <- ggplot(ram_n_df, aes(n, peak_ram_mb)) +
+  geom_line(colour = "#e08214", linewidth = 1) + geom_point(size = 2) +
+  labs(title = "RAM vs n", x = "n", y = "Peak RAM (MiB)") + theme_bw()
+
+p_rp <- ggplot(ram_p_df, aes(p, peak_ram_mb)) +
+  geom_line(colour = "#e08214", linewidth = 1) + geom_point(size = 2) +
+  scale_x_log10() +
+  labs(title = "RAM vs p (log scale)", x = "p", y = "Peak RAM (MiB)") + theme_bw()
+
+if (requireNamespace("patchwork", quietly = TRUE)) {
+  print(patchwork::wrap_plots(p_tn, p_tp, p_rn, p_rp, ncol = 2))
+} else {
+  print(p_tn); print(p_tp); print(p_rn); print(p_rp)
+}
+```
+
+
+---
+
+## Practical Guide: Choosing n_null
+
+```{r}
+guide_df <- data.frame(
+  Dataset_size = c(
+    "Small (n<100, p<500)",
+    "Medium (n=100-300, p=500-2000)",
+    "Large (n>300, p>2000)",
+    "CLL-scale (n~150, p~500 per block)"
+  ),
+  Recommended_n_null = c("100", "25-50", "10-25", "50"),
+  Expected_time      = c("<5 min", "5-20 min", "20-60 min", "~60 min"),
+  Note               = c(
+    "Stable p-values with 100 replicates",
+    "Good power/cost tradeoff",
+    "Use n_null=10 for exploration, increase for final results",
+    "Used in cll_application vignette"
+  )
+)
+knitr::kable(guide_df,
+             col.names = c("Dataset size", "n_null", "Expected time", "Note"),
+             caption   = "Practical n_null recommendations for jackstraw_rajive()")
+```
+
+
+The linear scaling of `n_null` means you can always run a quick exploratory
+analysis with `n_null = 10` and then increase to 50–100 for final results.
+
+---
+
+## Session Info
+
+```{r}
+sessionInfo()
+```

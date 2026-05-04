@@ -1,7 +1,15 @@
-^rajiveutils\.Rproj$
+^rajiveplus\.Rproj$
 ^\.Rproj\.user$
 ^README.Rmd$
+^README.html$
 ^_pkgdown\.yml$
 ^docs$
 ^pkgdown$
 ^\.github$
+^PLANS\.md$
+^PROGRESS\.md$
+^RESULT_INTERPRETATION_TEMPLATES\.md$
+^logs$
+^vignettes/.*_cache$
+^vignettes/.*_files$
+^vignettes/.*\.html$

@@ -1,6 +1,6 @@
-Package: rajiveutils
+Package: rajiveplus
 Title: Robust Angle Based Joint and Individual Variation Explained
-Version: 1.0
+Version: 0.1.0
 Authors@R: c(
     person(given = "Erica",
            family = "Ponzi",
@@ -21,7 +21,21 @@ Suggests:
     cowplot,
     reshape2,
     dplyr,
-    pkgdown
+    pkgdown,
+    bench,
+    microbenchmark,
+    peakRAM,
+    profmem,
+    profvis,
+    BloodCancerMultiOmics2017,
+    survival,
+    survminer,
+    randomForest,
+    pheatmap,
+    ggrepel,
+    patchwork,
+    remotes
+VignetteBuilder: knitr
 Imports: ggplot2,
 	doParallel,
 	foreach,
@@ -29,6 +43,6 @@ Imports: ggplot2,
 	Rcpp,
 	parallel
 LinkingTo: Rcpp, RcppArmadillo
-URL: https://mdmanurung.github.io/RaJIVEutils/
-BugReports: https://github.com/mdmanurung/RaJIVEutils/issues
+URL: https://mdmanurung.github.io/rajiveplus/
+BugReports: https://github.com/mdmanurung/rajiveplus/issues
 RoxygenNote: 7.3.2

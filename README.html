@@ -603,12 +603,12 @@ padding-top: 0px;
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-<h1 id="rajiveutils">rajiveutils</h1>
+<h1 id="rajiveplus">rajiveplus</h1>
 <!-- badges: start -->
 
 <!-- badges: end -->
 
-<p>rajiveutils (Robust Angle based Joint and Individual Variation
+<p>rajiveplus (Robust Angle based Joint and Individual Variation
 Explained) is a robust alternative to the aJIVE method for the
 estimation of joint and individual components in the presence of
 outliers in multi-source data. It decomposes the multi-source data into
@@ -616,16 +616,16 @@ joint, individual and residual (noise) contributions. The decomposition
 is robust with respect to outliers and other types of noises present in
 the data.</p>
 <h2 id="installation">Installation</h2>
-<p>You can install the released version of rajiveutils from <a href="https://CRAN.R-project.org">CRAN</a> with:</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">install.packages</span>(<span class="st">&quot;rajiveutils&quot;</span>)</span></code></pre></div>
+<p>You can install the released version of rajiveplus from <a href="https://CRAN.R-project.org">CRAN</a> with:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">install.packages</span>(<span class="st">&quot;rajiveplus&quot;</span>)</span></code></pre></div>
 <p>And the development version from <a href="https://github.com/">GitHub</a> with:</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="co"># install.packages(&quot;devtools&quot;)</span></span>
-<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>devtools<span class="sc">::</span><span class="fu">install_github</span>(<span class="st">&quot;mdmanurung/RaJIVEutils&quot;</span>)</span></code></pre></div>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>devtools<span class="sc">::</span><span class="fu">install_github</span>(<span class="st">&quot;mdmanurung/rajiveplus&quot;</span>)</span></code></pre></div>
 <h2 id="example">Example</h2>
-<p>This is a basic example which shows how to use rajiveutils on simple
+<p>This is a basic example which shows how to use rajiveplus on simple
 simulated data:</p>
 <h3 id="running-robust-ajive">Running robust aJIVE</h3>
-<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">library</span>(rajiveutils)</span>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">library</span>(rajiveplus)</span>
 <span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a><span class="do">## basic example code</span></span>
 <span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">50</span></span>
 <span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>pks <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">100</span>, <span class="dv">80</span>, <span class="dv">50</span>)</span>

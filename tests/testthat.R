@@ -1,4 +1,4 @@
 library(testthat)
-library(rajiveutils)
+library(rajiveplus)
 
-test_check("rajiveutils")
+test_check("rajiveplus")

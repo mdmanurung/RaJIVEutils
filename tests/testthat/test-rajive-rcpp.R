@@ -1,5 +1,5 @@
 library(testthat)
-library(rajiveutils)
+library(rajiveplus)
 
 # ---------------------------------------------------------------------------
 # Pipeline-level regression tests: Rajive() with Rcpp RobustSVD backend

@@ -1,0 +1,443 @@
+---
+title: "Multi-omics integration of CLL data with rajiveplus"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Multi-omics integration of CLL data with rajiveplus}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse  = TRUE,
+  comment   = "#>",
+  fig.width = 7,
+  fig.height = 5,
+  message   = FALSE,
+  warning   = FALSE
+)
+run_heavy <- FALSE  # set to FALSE after .rds files are generated
+data_dir  <- "data"
+```
+
+## Introduction
+
+This vignette applies `rajiveplus` to the publicly available Chronic
+Lymphocytic Leukaemia (CLL) multi-omics cohort from Dietrich et al. (2018)
+([PMID 29227291](https://pubmed.ncbi.nlm.nih.gov/29227291/)), distributed
+via the Bioconductor package `BloodCancerMultiOmics2017`.
+
+The dataset contains CLL patient samples profiled across multiple molecular
+layers.  We integrate three complementary views with RaJIVE:
+
+| Block | Source object | Biological meaning |
+|-------|---------------|--------------------|
+| mRNA | `dds` (DESeqDataSet, 63 677 genes × 136 samples) | Transcriptional programs |
+| Methylation | `methData` (RangedSummarizedExperiment, 5 000 CpGs × 196 samples) | Epigenetic state |
+| Drug viability | `lpdAll` (ExpressionSet, 448 drug–dose features × 249 samples) | Pharmacological sensitivity |
+
+The three-way sample overlap after restricting to CLL patients is **121 samples**.
+
+**Analysis goals:**
+
+1. Identify **joint** sources of variation shared across all three omics layers
+2. Test which features drive joint variation with `jackstraw_rajive()`
+3. Link joint factors to clinical phenotypes (IGHV status)
+4. Assess survival relevance with Cox proportional-hazards regression
+
+---
+
+## Prerequisites
+
+```{r install-check, eval=FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install("BloodCancerMultiOmics2017")
+install.packages(c("survival", "survminer", "randomForest",
+                   "pheatmap", "ggrepel", "patchwork"))
+```
+
+```{r load-pkgs}
+library(rajiveplus)
+library(ggplot2)
+library(pheatmap)
+```
+
+---
+
+## Data Loading and Overview
+
+```{r load-data-run, eval=run_heavy}
+library(BloodCancerMultiOmics2017)
+data("dds")        # DESeqDataSet: RNA-seq, 63677 genes x 136 samples
+data("methData")   # RangedSummarizedExperiment: 5000 CpGs x 196 samples
+data("lpdAll")     # ExpressionSet: 448 viab features + metadata x 249 samples
+data("patmeta")    # Clinical metadata data.frame, rownames = patient H-IDs
+
+cat("Raw dimensions:\n")
+cat("  RNA-seq (dds):", dim(dds), "\n")
+cat("  Methylation (methData):", dim(methData), "\n")
+cat("  lpdAll (all features):", dim(lpdAll), "\n")
+cat("  patmeta:", dim(patmeta), "\n")
+```
+
+```{r preprocess-run, eval=run_heavy}
+# ---- RNA-seq ----
+# dds column names are integers; map to patient H-IDs via colData$PatID
+rna_hids    <- SummarizedExperiment::colData(dds)[["PatID"]]
+counts_mat  <- SummarizedExperiment::assay(dds)       # genes x samples
+colnames(counts_mat) <- rna_hids
+
+# log2(count + 1) normalisation; transpose to samples x genes
+mrna_full   <- t(log2(counts_mat + 1))                # samples x genes
+
+# Select top 500 highly variable genes
+rv_mrna     <- apply(mrna_full, 2, var, na.rm = TRUE)
+mrna_top    <- mrna_full[, order(rv_mrna, decreasing = TRUE)[1:500], drop = FALSE]
+
+# ---- Methylation ----
+# methData: features x samples; transpose to samples x CpGs
+meth_full   <- t(SummarizedExperiment::assay(methData))  # samples x CpGs
+rv_meth     <- apply(meth_full, 2, var, na.rm = TRUE)
+meth_top    <- meth_full[, order(rv_meth, decreasing = TRUE)[1:500], drop = FALSE]
+
+# ---- Drug viability ----
+# lpdAll: filter to 'viab' feature type, then transpose
+viab_idx    <- which(Biobase::fData(lpdAll)[["type"]] == "viab")
+viab_full   <- t(Biobase::exprs(lpdAll)[viab_idx, ])    # samples x drug-doses
+rv_viab     <- apply(viab_full, 2, var, na.rm = TRUE)
+viab_top    <- viab_full[, order(rv_viab, decreasing = TRUE)[1:min(448, ncol(viab_full))],
+                          drop = FALSE]
+
+# ---- Three-way sample overlap ----
+common3 <- Reduce(intersect, list(
+  rownames(mrna_top),
+  rownames(meth_top),
+  rownames(viab_top)
+))
+# Restrict to CLL diagnosis
+cll_flag  <- patmeta[common3, "Diagnosis"] == "CLL"
+cll_flag[is.na(cll_flag)] <- FALSE
+common_cll <- common3[cll_flag]
+cat("Three-way overlap (CLL patients):", length(common_cll), "samples\n")
+
+# ---- Subset and scale ----
+scale_block <- function(m) {
+  m_s <- scale(m, center = TRUE, scale = TRUE)
+  m_s[is.nan(m_s)] <- 0
+  m_s
+}
+
+blocks <- list(
+  mRNA        = scale_block(mrna_top[common_cll, , drop = FALSE]),
+  Methylation = scale_block(meth_top[common_cll, , drop = FALSE]),
+  Drugs       = scale_block(viab_top[common_cll, , drop = FALSE])
+)
+meta_cc <- patmeta[common_cll, , drop = FALSE]
+
+cat("Final block dimensions:\n")
+print(lapply(blocks, dim))
+
+saveRDS(list(blocks = blocks, meta = meta_cc),
+        file.path(data_dir, "cll_preprocessed.rds"))
+```
+
+```{r preprocess-load}
+pp     <- readRDS(file.path(data_dir, "cll_preprocessed.rds"))
+blocks <- pp$blocks
+meta   <- pp$meta
+cat("Samples:", nrow(blocks[[1]]), "\n")
+cat("Block dimensions:\n"); print(lapply(blocks, dim))
+```
+
+---
+
+## Scree Plots: Choosing Initial Signal Ranks
+
+```{r svd-run, eval=run_heavy}
+svd_list <- lapply(blocks, function(m) svd(m, nu = 0, nv = 0)$d)
+saveRDS(svd_list, file.path(data_dir, "cll_svd_list.rds"))
+```
+
+```{r svd-load}
+svd_list <- readRDS(file.path(data_dir, "cll_svd_list.rds"))
+```
+
+```{r scree-plots, fig.height=4}
+block_names <- c("mRNA", "Methylation", "Drugs")
+par(mfrow = c(1, 3), mar = c(4, 4, 3, 1))
+for (i in seq_along(svd_list)) {
+  sv  <- svd_list[[i]]
+  pve <- sv^2 / sum(sv^2) * 100
+  plot(seq_along(pve[1:30]), pve[1:30], type = "b", pch = 19,
+       xlab = "Component", ylab = "% Variance Explained",
+       main = block_names[i], col = "#2166ac")
+  abline(v = c(15L, 10L, 10L)[i], col = "#d6604d", lty = 2)
+}
+par(mfrow = c(1, 1))
+```
+
+The dashed red lines mark the chosen initial signal ranks:
+**mRNA = 15**, **Methylation = 10**, **Drugs = 10**.
+
+---
+
+## Run Rajive()
+
+```{r rajive-run, eval=run_heavy}
+set.seed(42)
+cll_fit <- Rajive(
+  blocks               = blocks,
+  initial_signal_ranks = c(15L, 10L, 10L),
+  full                 = TRUE,
+  n_wedin_samples      = 1000L,
+  n_rand_dir_samples   = 1000L,
+  joint_rank           = NA,
+  num_cores            = 12L
+)
+saveRDS(cll_fit, file.path(data_dir, "cll_rajive_results.rds"))
+```
+
+```{r rajive-load}
+cll_fit <- readRDS(file.path(data_dir, "cll_rajive_results.rds"))
+cat("Estimated joint rank:", get_joint_rank(cll_fit), "\n")
+print(get_all_ranks(cll_fit))
+```
+
+---
+
+## Variance Decomposition
+
+```{r var-explained}
+plot_variance_explained(cll_fit, blocks) +
+  labs(title    = "CLL multi-omics: variance decomposition",
+       subtitle = "Joint, Individual, and Noise components per block") +
+  theme_bw()
+```
+
+```{r var-table}
+ve_tbl <- showVarExplained_robust(cll_fit, blocks)
+knitr::kable(ve_tbl, digits = 2,
+             caption = "Variance explained by component type per block (%)")
+```
+
+---
+
+## Joint Factor Exploration
+
+```{r joint-scores}
+joint_sc <- as.data.frame(get_joint_scores(cll_fit))
+colnames(joint_sc) <- paste0("Factor", seq_len(ncol(joint_sc)))
+rownames(joint_sc) <- rownames(blocks[[1]])
+
+common_ids  <- intersect(rownames(joint_sc), rownames(meta))
+joint_sc_m  <- joint_sc[common_ids, , drop = FALSE]
+meta_m      <- meta[common_ids, , drop = FALSE]
+```
+
+```{r factor-scatter-ighv, fig.height=4.5}
+nf <- min(2, ncol(joint_sc_m))
+plot_df <- data.frame(joint_sc_m[, 1:nf, drop = FALSE],
+                      IGHV = factor(meta_m$IGHV))
+colnames(plot_df)[1:2] <- c("Factor1", "Factor2")
+
+ggplot(plot_df, aes(x = Factor1, y = Factor2, colour = IGHV)) +
+  geom_point(size = 2, alpha = 0.8) +
+  scale_colour_manual(values = c("M" = "#2166ac", "U" = "#d6604d"),
+                      na.value = "grey70") +
+  labs(title    = "CLL joint scores: Factor 1 vs Factor 2",
+       subtitle = "Coloured by IGHV mutation status (M = mutated, U = unmutated)",
+       colour   = "IGHV") +
+  theme_bw()
+```
+
+```{r factor-covariate-heatmap, fig.height=4}
+covariates <- intersect(c("IGHV", "treatedAfter", "died"), colnames(meta_m))
+cov_vals   <- meta_m[, covariates, drop = FALSE]
+n_factors  <- ncol(joint_sc_m)
+
+cor_mat <- matrix(NA, nrow = n_factors, ncol = ncol(cov_vals),
+                  dimnames = list(colnames(joint_sc_m), covariates))
+for (fi in seq_len(n_factors)) {
+  for (ci in seq_along(covariates)) {
+    cv <- suppressWarnings(as.numeric(cov_vals[[ci]]))
+    if (sum(!is.na(cv)) > 5)
+      cor_mat[fi, ci] <- cor(joint_sc_m[[fi]], cv, use = "complete.obs")
+  }
+}
+
+pheatmap(cor_mat,
+         cluster_rows = FALSE, cluster_cols = FALSE,
+         color = colorRampPalette(c("#d6604d", "white", "#2166ac"))(100),
+         breaks = seq(-1, 1, length.out = 101),
+         main = "Factor-covariate correlations (Pearson r)",
+         fontsize = 11)
+```
+
+---
+
+## Jackstraw Significance Testing
+
+```{r jackstraw-run, eval=run_heavy}
+set.seed(42)
+cll_js <- jackstraw_rajive(
+  ajive_output = cll_fit,
+  blocks       = blocks,
+  alpha        = 0.05,
+  n_null       = 50L,
+  correction   = "BH"
+)
+saveRDS(cll_js, file.path(data_dir, "cll_jackstraw_results.rds"))
+```
+
+```{r jackstraw-load}
+cll_js <- readRDS(file.path(data_dir, "cll_jackstraw_results.rds"))
+print(cll_js)
+```
+
+```{r jackstraw-plot, fig.height=4}
+plot_jackstraw(cll_js, type = "pvalue_hist", block = 1L, component = 1L) +
+  labs(title    = "Jackstraw: mRNA block, Factor 1",
+       subtitle = "Observed vs null F-statistic distributions") +
+  theme_bw()
+```
+
+```{r significant-vars}
+sig_mrna <- get_significant_vars(cll_js, block = 1L, component = 1L)
+cat("Significant mRNA features (Factor 1, BH alpha=0.05):", nrow(sig_mrna), "\n")
+if (nrow(sig_mrna) > 0)
+  knitr::kable(head(sig_mrna, 20),
+               caption = "Top significant mRNA features in Factor 1")
+```
+
+---
+
+## Molecular Signatures: Top Feature Loadings
+
+```{r loadings-mrna, fig.height=6}
+mrna_loadings <- get_block_loadings(cll_fit, k = 1L, type = "joint")
+if (!is.null(mrna_loadings) && ncol(mrna_loadings) >= 1) {
+  top25_idx <- order(abs(mrna_loadings[, 1]), decreasing = TRUE)[1:min(25, nrow(mrna_loadings))]
+  jmat      <- get_block_matrix(cll_fit, k = 1L, type = "joint")
+  if (!is.null(jmat)) {
+    pheatmap(t(jmat[, top25_idx, drop = FALSE]),
+             show_colnames = FALSE,
+             color         = colorRampPalette(c("#2166ac", "white", "#d6604d"))(100),
+             main          = "mRNA joint component: top 25 features (Factor 1)",
+             fontsize_row  = 8,
+             cluster_cols  = TRUE)
+  }
+}
+```
+
+---
+
+## Clinical Subgroup Prediction
+
+### IGHV status (Random Forest)
+
+```{r rf-ighv}
+if (requireNamespace("randomForest", quietly = TRUE)) {
+  rf_df <- data.frame(
+    joint_sc_m,
+    IGHV = factor(meta_m$IGHV[match(rownames(joint_sc_m), rownames(meta_m))])
+  )
+  rf_df <- rf_df[!is.na(rf_df$IGHV), , drop = FALSE]
+  set.seed(42)
+  rf_fit <- randomForest::randomForest(IGHV ~ ., data = rf_df, ntree = 500L)
+  cat("OOB error (IGHV prediction):",
+      round(rf_fit$err.rate[nrow(rf_fit$err.rate), "OOB"] * 100, 1), "%\n")
+  print(rf_fit$confusion)
+}
+```
+
+---
+
+## Survival Analysis
+
+```{r survival-prep}
+if (requireNamespace("survival", quietly = TRUE)) {
+  # T5 = time to first treatment (years); treatedAfter = event indicator
+  surv_df <- data.frame(
+    joint_sc_m,
+    TTT          = meta_m$T5[match(rownames(joint_sc_m), rownames(meta_m))],
+    treatedAfter = as.integer(
+      meta_m$treatedAfter[match(rownames(joint_sc_m), rownames(meta_m))]
+    )
+  )
+  surv_df <- surv_df[!is.na(surv_df$TTT) & !is.na(surv_df$treatedAfter), , drop = FALSE]
+  cat("Samples with survival data:", nrow(surv_df), "\n")
+}
+```
+
+```{r cox-ph}
+if (requireNamespace("survival", quietly = TRUE) && exists("surv_df") && nrow(surv_df) > 10) {
+  factor_cols <- paste(paste0("Factor", seq_len(get_joint_rank(cll_fit))), collapse = " + ")
+  cox_fit <- survival::coxph(
+    as.formula(paste("survival::Surv(TTT, treatedAfter) ~", factor_cols)),
+    data = surv_df
+  )
+  knitr::kable(round(summary(cox_fit)$coefficients, 4),
+               caption = "Cox PH: joint factors vs time to treatment")
+}
+```
+
+```{r km-factor1, fig.height=5}
+if (requireNamespace("survminer", quietly = TRUE) &&
+    requireNamespace("survival",  quietly = TRUE) &&
+    exists("surv_df") && nrow(surv_df) > 10) {
+  surv_df$Factor1_group <- ifelse(
+    surv_df$Factor1 > median(surv_df$Factor1), "High", "Low"
+  )
+  km_fit <- survival::survfit(
+    survival::Surv(TTT, treatedAfter) ~ Factor1_group, data = surv_df
+  )
+  survminer::ggsurvplot(
+    km_fit, data = surv_df,
+    pval        = TRUE,
+    risk.table  = TRUE,
+    palette     = c("#d6604d", "#2166ac"),
+    title       = "Time to treatment by Factor 1 (median split)",
+    xlab        = "Time (years)",
+    legend.labs = c("High Factor 1", "Low Factor 1")
+  )
+}
+```
+
+---
+
+## Comparison with MOFA2 Findings
+
+The MOFA2 CLL analysis (Argelaguet et al. 2020) identified four latent
+factors.  The table below maps biological interpretations between methods:
+
+```{r mofa2-comparison}
+jrank <- get_joint_rank(cll_fit)
+comp_df <- data.frame(
+  `RaJIVE Factor` = paste0("Factor ", seq_len(jrank)),
+  `Biological signal` = c(
+    "IGHV status / B-cell differentiation (MOFA2 Factor 1)",
+    "Trisomy 12 / proliferative signalling (MOFA2 Factor 2)",
+    rep("Inspect loadings", max(0, jrank - 2))
+  )[seq_len(jrank)],
+  `Key evidence` = c(
+    "High |r| with IGHV; separates M/U in score plot",
+    "Inspect mRNA + methylation loadings",
+    rep("See loadings heatmap", max(0, jrank - 2))
+  )[seq_len(jrank)],
+  check.names = FALSE
+)
+knitr::kable(comp_df, caption = "RaJIVE-MOFA2 factor correspondence (preliminary)")
+```
+
+> The MOFA2 factors are not in one-to-one correspondence with RaJIVE factors
+> by construction.  The mapping is based on covariate correlations and loading
+> patterns and should be verified against the full loading matrices.
+
+---
+
+## Session Info
+
+```{r session-info}
+sessionInfo()
+```

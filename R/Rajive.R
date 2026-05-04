@@ -51,8 +51,21 @@ Rajive <- function(blocks, initial_signal_ranks, full=TRUE,
   # step 1: initial signal space extraction --------------------------------
   # initial estimate of signal space with SVD
 
-  # apply svd to all element in the list
-  block_svd <- parallel::mclapply(blocks, get_svd_robustH, mc.cores=num_cores)
+  # If joint_rank is fixed, wedin resampling is skipped, so we only need
+  # signal_rank + 1 singular values per block for thresholding.
+  if (is.na(joint_rank)) {
+    # Full SVD is required for Wedin bound resampling (uses U_perp/V_perp).
+    block_svd <- parallel::mclapply(blocks, get_svd_robustH, mc.cores = num_cores)
+  } else {
+    max_rank_per_block <- vapply(blocks, function(x) min(dim(x)), integer(1L))
+    svd_ranks <- pmin(initial_signal_ranks + 1L, max_rank_per_block)
+
+    block_svd <- parallel::mclapply(
+      seq_along(blocks),
+      function(k) get_svd_robustH(blocks[[k]], rank = svd_ranks[k]),
+      mc.cores = num_cores
+    )
+  }
   # extract singular values from list
   singular_values = parallel::mclapply(block_svd, function(l) l[[1]], mc.cores=num_cores)
   # apply get_sv_threshold

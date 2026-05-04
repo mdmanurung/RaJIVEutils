@@ -1,2 +1,31 @@
 .Rproj.user
 docs/
+
+# R session and IDE artifacts
+.Rhistory
+.RData
+.Ruserdata
+
+# Render/build artifacts not needed in source control
+*.Rcheck/
+*.tar.gz
+*.log
+*.out
+*.aux
+*.toc
+*.pdf
+
+# pkgdown and local build folders
+pkgdown/
+logs/*.log
+
+# Rendered vignette intermediates
+vignettes/*_cache/
+vignettes/*_files/
+vignettes/*.html
+
+# Local planning/notes outputs
+PROGRESS.md
+PLANS.md
+PROGRESS.md
+AGENTS.md
