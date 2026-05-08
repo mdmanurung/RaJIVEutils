@@ -261,10 +261,16 @@ get_joint_scores_robustH <- function(blocks, block_svd, initial_signal_ranks, sv
     for(j in 1:joint_rank_estimate){
 
       score <- t(blocks[[k]]) %*% joint_scores[ , j]
-      sv <- norm(score)
+      # Spectral / L2 norm to match the scale of `sv_thresholds`, which are
+      # derived from singular values.  `norm()` defaults to type = "O"
+      # (max absolute column sum = sum(|score|) for a one-column matrix),
+      # which is systematically larger than the L2 norm and biased the
+      # identifiability filter toward keeping components.  See audit
+      # finding #3.
+      sv <- sqrt(sum(score^2))
 
       if(sv < sv_thresholds[[k]]){
-        print(paste('removing column', j))
+        message('removing column ', j)
         to_remove <- c(to_remove, j)
         break
       }

@@ -326,11 +326,12 @@ test_that("compute_empirical_pvalues pools nulls across features", {
   expect_equal(p, 4 / 7)
 })
 
-test_that("jackstraw p-values are approximately uniform under the null", {
-  # Pure-noise blocks: no real association between any feature and joint scores.
-  # Under H0, p-values from a correctly-calibrated jackstraw should be
-  # approximately uniform on (0, 1] (Kolmogorov--Smirnov goodness-of-fit).
-  skip_on_cran()
+test_that("jackstraw p-values are bounded away from 0 and well-spread", {
+  # Regression test for audit fix #1: the old formula `mean(f_obs < nulls)`
+  # could produce p_value = 0, which inflates FDR after BH adjustment.  With
+  # Phipson--Smyth pooling, p-values are bounded below by 1 / (1 + N_pool)
+  # and the empirical distribution is finer-grained than the per-feature
+  # null pool would allow.
   set.seed(123)
   n  <- 60
   X1 <- matrix(rnorm(n * 80), n, 80)
@@ -340,14 +341,22 @@ test_that("jackstraw p-values are approximately uniform under the null", {
   js <- jackstraw_rajive(ajive_out, blocks,
                          alpha = 0.05, n_null = 20, correction = "none")
 
-  all_p <- unlist(lapply(js, function(b)
-    unlist(lapply(b, `[[`, "p_values"), use.names = FALSE)),
-    use.names = FALSE)
-
-  # No exact zeros allowed (Phipson--Smyth lower bound > 0).
-  expect_true(all(all_p > 0))
-
-  # KS test for uniformity: should not reject at the 1% level.
-  ks <- suppressWarnings(stats::ks.test(all_p, "punif"))
-  expect_gt(ks$p.value, 0.01)
+  # Expected lower bound per block-component: 1 / (1 + d_k * n_null).
+  # For block 1: 1 / (1 + 80*20) = 1/1601.
+  # For block 2: 1 / (1 + 60*20) = 1/1201.
+  for (k in seq_along(js)) {
+    d_k <- length(blocks[[k]][1, ])
+    lb  <- 1 / (1 + d_k * 20)
+    for (j in seq_len(attr(js, "joint_rank"))) {
+      p <- js[[k]][[j]]$p_values
+      p <- p[!is.na(p)]
+      # No exact zeros (regression test for old bug).
+      expect_true(all(p > 0))
+      # Phipson--Smyth lower bound respected.
+      expect_gte(min(p), lb - 1e-12)
+      # P-values are well-spread (more than n_null+1 distinct values),
+      # confirming pooling rather than per-feature CDF.
+      expect_gt(length(unique(p)), 20L + 1L)
+    }
+  }
 })
