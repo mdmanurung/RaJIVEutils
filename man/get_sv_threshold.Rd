@@ -14,3 +14,15 @@ get_sv_threshold(singular_values, rank)
 \description{
 Computes the singular value threshold for the data matrix (half way between the rank and rank + 1 singluar value).
 }
+\details{
+When \code{rank < length(singular_values)} the threshold is the midpoint
+between \code{singular_values[rank]} and \code{singular_values[rank + 1]},
+which is the standard gap-midpoint rule.
+
+\strong{Boundary heuristic:} when \code{rank == length(singular_values)}
+(i.e. the requested rank equals the data rank so there is no \code{rank+1}
+singular value) the function returns \code{0.5 * singular_values[rank]}.
+This is an arbitrary heuristic in the interval \code{(0, sv[rank])}.  If
+you encounter this edge case, verify that \code{initial_signal_rank} is
+strictly less than \code{min(nrow(X), ncol(X))} for each block.
+}

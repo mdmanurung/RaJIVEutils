@@ -9,10 +9,11 @@ jackstraw_rajive(
   blocks,
   alpha = 0.05,
   n_null = 10,
-  correction = c("BY", "BH", "bonferroni", "none"),
+  correction = c("BH", "BY", "bonferroni", "none"),
   pip = FALSE,
   pip_pi0 = NULL,
-  pip_group = c("component", "block_component", "pooled")
+  pip_group = c("pooled", "block_component", "component"),
+  pool = c("block", "global")
 )
 }
 \arguments{
@@ -30,17 +31,14 @@ at the cost of computation time.  Default \code{10}; recommended
 \code{50}--\code{100} for publication-quality results.}
 
 \item{correction}{Character string controlling multiple-testing correction.
-One of \code{"BY"} (default), \code{"BH"}, \code{"bonferroni"}, or
+One of \code{"BH"} (default), \code{"BY"}, \code{"bonferroni"}, or
 \code{"none"}.  Adjustments are applied globally across all
 block/component/feature tests in the returned object.
-\code{"BY"} (Benjamini--Yekutieli) controls the FDR under arbitrary
-dependency structure among tests; it is preferred for omics data because
-nearby genomic features are often correlated.  \code{"BH"}
-(Benjamini--Hochberg) also controls FDR but assumes positive regression
-dependency (PRDS), which omics blocks may violate --- use it only when
-the dependency structure is known to be PRDS or features are nearly
-independent.  \code{"bonferroni"} controls the family-wise error rate
-by dividing \code{alpha} by the total number of tests.}
+\code{"BH"} (Benjamini--Hochberg) controls FDR under positive regression
+dependency (PRDS).  \code{"BY"} (Benjamini--Yekutieli) controls FDR under
+arbitrary dependency; use it when neighbouring features are strongly
+correlated (e.g. genomic windows).  \code{"bonferroni"} controls the
+family-wise error rate.}
 
 \item{pip}{Logical; if \code{TRUE}, compute posterior inclusion probabilities
 (PIPs) for each feature via \code{qvalue::lfdr()}.  Requires the
@@ -51,11 +49,21 @@ by dividing \code{alpha} by the total number of tests.}
 automatically.}
 
 \item{pip_group}{Character string controlling how features are grouped when
-computing PIPs.  One of \code{"component"} (default; one lfdr call per
-joint component across all blocks), \code{"block_component"} (one call
-per block \eqn{\times} component combination), or \code{"pooled"} (a
-single lfdr call over all tests).  Larger groups give more stable
-\eqn{\pi_0} estimates; smaller groups allow \eqn{\pi_0} to vary.}
+computing PIPs.  One of \code{"pooled"} (default; a single lfdr call over
+all tests), \code{"component"} (one call per joint component across all
+blocks), or \code{"block_component"} (one call per block \eqn{\times}
+component combination).  Larger groups give more stable \eqn{\pi_0}
+estimates and are recommended when each block/component has fewer than
+~200 features; smaller groups allow \eqn{\pi_0} to vary across components.}
+
+\item{pool}{Character string controlling how null F-statistics are pooled
+when computing empirical p-values within each block.  One of
+\code{"block"} (default; null statistics from all joint components are
+pooled together for each block, giving a \eqn{d_k \times
+(J \cdot n_{null})} pool) or \code{"global"} (the original per-component
+behaviour: a separate \eqn{d_k \times n_{null}} pool is used for each
+block/component pair).  Block pooling is more statistically defensible
+when features within a block have comparable noise levels.}
 }
 \value{
 An object of class \code{"jackstraw_rajive"}: a named list with one
@@ -107,13 +115,9 @@ the association would hold against the true latent score
 (StatisticalAudits.md, Finding 8).
 }
 \note{
-\strong{Default correction is \code{"BY"}}, not \code{"BH"}. The
-  Benjamini--Yekutieli correction is valid under arbitrary dependency
-  structure, whereas Benjamini--Hochberg requires positive regression
-  dependency (PRDS). In omics blocks, neighboring features are often
-  correlated; using \code{"BH"} in that setting can inflate the
-  false-discovery rate beyond the nominal level (Benjamini & Yekutieli
-  2001, \emph{Ann. Statist.} 29(4):1165--1188).
+The default correction was changed from \code{"BY"} back to \code{"BH"}
+  starting with version 0.3.0.  For strongly correlated omics blocks, switch
+  to \code{correction = "BY"} for FDR control under arbitrary dependency.
 }
 \examples{
 \donttest{

@@ -1,6 +1,6 @@
 # Input validation and warning tests for Rajive (W-M10, W-M11).
 
-test_that("Rajive aborts on near-constant columns", {
+test_that("Rajive warns (not aborts) on near-constant columns and still returns a result", {
   set.seed(12)
   n <- 30
   X1 <- matrix(rnorm(n * 8), n, 8)
@@ -9,10 +9,14 @@ test_that("Rajive aborts on near-constant columns", {
   # Force degeneracy in one feature.
   X1[, 1] <- 5
 
-  expect_error(
+  result <- expect_warning(
     Rajive(list(X1, X2), initial_signal_ranks = c(3, 3)),
     class = "rajiveplus_degenerate_block"
   )
+  # Degenerate column should have been dropped; analysis should complete.
+  expect_s3_class(result, "rajive")
+  # X1 had 8 columns; after dropping the constant col it has 7.
+  expect_equal(ncol(result$block_decomps[[2]]$v), 7L)
 })
 
 test_that("Rajive warns when n < sum(initial_signal_ranks)", {

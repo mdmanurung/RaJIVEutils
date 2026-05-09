@@ -39,9 +39,8 @@
 #'
 #' Joint rank is selected by comparing the squared common singular values of
 #' the stacked signal-score matrix to a threshold derived from a Wedin bound
-#' and either a random-direction bound (default) or a permutation bound
-#' (when \code{n_perm_samples} is supplied). The combined threshold is
-#' \code{max(wedin, rand_dir | perm)}; this heuristic is conservative in
+#' and a random-direction bound, a permutation bound, or both.  The combined
+#' threshold is \code{max(wedin, rand_dir, perm)}; this heuristic is conservative in
 #' practice but does not carry a formal FWER/FDR guarantee for rank
 #' selection (see \code{StatisticalAudits.md}, Finding 6).
 #'
@@ -58,16 +57,18 @@
 #' @param n_wedin_samples Positive integer. Number of Wedin bound samples to
 #'   draw per block. Default \code{1000}.
 #' @param n_rand_dir_samples Positive integer. Number of random-direction
-#'   bound samples to draw. Default \code{1000}. Ignored when
-#'   \code{n_perm_samples} is supplied.
+#'   bound samples to draw. Default \code{1000}. When both
+#'   \code{n_rand_dir_samples} and \code{n_perm_samples} are supplied, both
+#'   bounds are computed independently and the maximum is used as the threshold.
 #' @param joint_rank Integer or \code{NA}. User-specified joint rank. When
 #'   \code{NA} (default) the joint rank is estimated from the data.
 #' @param n_perm_samples Integer or \code{NA}. Number of permutation samples
-#'   for the permutation-based joint-rank threshold. When supplied, replaces
-#'   the random-direction bound: rows of each block's signal scores are
-#'   independently shuffled, the leading squared singular value of the
-#'   stacked permuted matrix is recorded, and its 95th percentile is used
-#'   as the threshold. Permutation takes precedence when both are set.
+#'   for the permutation-based joint-rank threshold.  Rows of each block's
+#'   signal scores are independently shuffled, the leading squared singular
+#'   value of the stacked permuted matrix is recorded, and its 95th percentile
+#'   is used as the threshold.  When both \code{n_perm_samples} and
+#'   \code{n_rand_dir_samples} are supplied, both are computed and their
+#'   maximum (together with the Wedin bound) is the final threshold.
 #'   Default \code{NA}.
 #' @param num_cores Positive integer. Number of cores to use for parallel
 #'   block SVDs, Wedin / random-direction / permutation bound resampling.
@@ -165,10 +166,12 @@ Rajive <- function(blocks, initial_signal_ranks, full=TRUE,
                            n_wedin_samples=1000, n_rand_dir_samples=1000,
                            joint_rank=NA,
                            n_perm_samples=NA,
-                           num_cores=1L)
+                           num_cores=1L,
+                           seed=NA_integer_)
 {
 
   num_cores <- max(1L, as.integer(num_cores))
+  if (!is.na(seed)) set.seed(as.integer(seed))
 
   # Phase 4 boundary validation: abort early with clear classes/messages.
   if (!is.list(blocks) || length(blocks) < 1L) {
@@ -197,15 +200,20 @@ Rajive <- function(blocks, initial_signal_ranks, full=TRUE,
     )
   }
 
-  degenerate_blocks <- which(vapply(blocks, function(x)
-    any(apply(x, 2L, stats::sd) < .Machine$double.eps^0.5), logical(1L)))
-  if (length(degenerate_blocks) > 0L) {
-    cli::cli_abort(
-      c("Degenerate block detected: one or more columns have near-zero variance.",
-        "x" = "Block index(es): {.val {degenerate_blocks}}"),
-      class = "rajiveplus_degenerate_block"
-    )
-  }
+  blocks <- lapply(seq_along(blocks), function(k) {
+    x <- blocks[[k]]
+    bad_cols <- apply(x, 2L, stats::sd) < .Machine$double.eps^0.5
+    if (any(bad_cols)) {
+      cli::cli_warn(
+        c("Degenerate column(s) in block {.val {k}} dropped automatically.",
+          "i" = "{.val {sum(bad_cols)}} column(s) with near-zero variance removed."),
+        class = "rajiveplus_degenerate_block"
+      )
+      x[, !bad_cols, drop = FALSE]
+    } else {
+      x
+    }
+  })
 
   n_obs <- nrow(blocks[[1L]])
   if (n_obs < sum(initial_signal_ranks)) {
@@ -302,6 +310,17 @@ Rajive <- function(blocks, initial_signal_ranks, full=TRUE,
 #' @param singular_values Numeric. The singular values.
 #' @param rank Integer. The rank of the approximation.
 #'
+#' @details
+#' When \code{rank < length(singular_values)} the threshold is the midpoint
+#' between \code{singular_values[rank]} and \code{singular_values[rank + 1]},
+#' which is the standard gap-midpoint rule.
+#'
+#' \strong{Boundary heuristic:} when \code{rank == length(singular_values)}
+#' (i.e. the requested rank equals the data rank so there is no \code{rank+1}
+#' singular value) the function returns \code{0.5 * singular_values[rank]}.
+#' This is an arbitrary heuristic in the interval \code{(0, sv[rank])}.  If
+#' you encounter this edge case, verify that \code{initial_signal_rank} is
+#' strictly less than \code{min(nrow(X), ncol(X))} for each block.
 
 get_sv_threshold <- function(singular_values, rank){
   # W-H1: boundary guard — when rank == length(singular_values) there is no
@@ -407,7 +426,8 @@ get_joint_scores_robustH <- function(blocks, block_svd, initial_signal_ranks, sv
       rank_sel_results[['perm']] <- list(perm_samples = perm_draws,
                                          perm_svsq_threshold = perm_svsq_threshold)
 
-    } else if (!is.na(n_rand_dir_samples)) {
+    }
+    if (!is.na(n_rand_dir_samples)) {
 
       rand_dir_samples <- get_random_direction_bound_robustH(n_obs = n_obs,
                                                              dims = initial_signal_ranks,
@@ -570,16 +590,11 @@ get_joint_decomposition_robustH <- function(X, joint_scores, full=TRUE){
 
   J <-  joint_scores %*% t(joint_scores) %*% X
 
-  # Audit perf #14: J = U U^T X is exactly rank `joint_rank` by construction
-  # (joint_scores is an orthonormal basis), so plain base::svd() is
-  # mathematically equivalent to the M-estimator robust SVD here but ~10-100x
-  # faster.  No outliers can survive the projection onto the joint subspace.
-  joint_decomposition <- svd(J, nu = joint_rank, nv = joint_rank)
-  joint_decomposition <- list(
-    u = joint_decomposition$u[, seq_len(joint_rank), drop = FALSE],
-    d = joint_decomposition$d[seq_len(joint_rank)],
-    v = joint_decomposition$v[, seq_len(joint_rank), drop = FALSE]
-  )
+  # Use the M-estimator robust SVD for consistency with the rest of the
+  # pipeline. J is rank `joint_rank` by construction; truncate to that rank.
+  joint_decomposition <- get_svd_robustH(J, rank = joint_rank)
+  joint_decomposition <- truncate_svd(decomposition = joint_decomposition,
+                                      rank          = joint_rank)
 
   if(full){
     joint_decomposition[['full']] <- J

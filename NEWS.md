@@ -10,14 +10,46 @@
   **qvalue** Bioconductor package (Suggests).
   Reference: Chung NC (2020). *Bioinformatics*, 36(10):3107–3114.
 
+- `Rajive()` gains a `seed` argument (default `NA`).  When non-`NA`,
+  `set.seed(seed)` is called before any random sampling, making results
+  fully reproducible without setting the seed externally.
+
+- `jackstraw_rajive()` gains a `pool` argument (default `"block"`).  When
+  `"block"`, null F-statistics from all joint components are pooled within
+  each block before computing empirical p-values, giving a
+  $d_k \times (J \cdot n_{null})$ null pool per block.  Set `pool = "global"`
+  to restore the original per-component behaviour.
+
+- `Rajive()` now computes both the permutation bound and the random-direction
+  bound independently when both `n_perm_samples` and `n_rand_dir_samples` are
+  supplied (previously the permutation bound silently replaced the
+  random-direction bound).  The final threshold is still `max(wedin,
+  rand_dir, perm)`.
+
+- `assess_stability(target = "components")` now attaches a `rank_match_rate`
+  attribute to the returned data frame: the fraction of successful bootstrap
+  iterations in which the bootstrap joint rank equalled the reference rank.
+  Values below 1 indicate rank instability across resamples.
+
 ## Changes in defaults
 
-- `jackstraw_rajive()`: default `correction` changed from `"BH"` to `"BY"`
-  (Benjamini--Yekutieli).  BY controls FDR under arbitrary dependency among
-  tests; BH requires positive regression dependency (PRDS).  Omics feature
-  blocks (with local correlation structure) can violate PRDS, making BH
-  anti-conservative.  Existing code that passed `correction = "BH"` explicitly
-  is unaffected.
+- `jackstraw_rajive()`: default `correction` reverted from `"BY"` back to
+  `"BH"` (Benjamini--Hochberg).  BH is the standard FDR procedure and
+  sufficient for most use cases; switch to `correction = "BY"` explicitly
+  when neighbouring features are strongly correlated.
+
+- `jackstraw_rajive()`: default `pip_group` changed from `"component"` to
+  `"pooled"`.  A single pooled `lfdr` call over all tests gives a more
+  stable `π₀` estimate when individual blocks are small.  Use
+  `pip_group = "component"` to restore the previous behaviour.
+
+## Bug fixes / behaviour changes
+
+- Degenerate columns (near-zero variance) in a `Rajive()` input block are now
+  **dropped automatically** with a warning (`class =
+  "rajiveplus_degenerate_block"`) instead of aborting with an error.  This
+  allows analysis to continue when a small fraction of constant features are
+  present (e.g. batch-invariant housekeeping genes).
 
 - Added `n_perm_samples` argument to `Rajive()` (default `NA`, no behaviour
   change). When non-NA, a non-parametric permutation-based joint-rank

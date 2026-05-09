@@ -1556,6 +1556,8 @@ assess_stability <- function(ajive_output = NULL,
 
       n_comp <- ncol(ref)
       cor_mat <- matrix(NA_real_, nrow = B, ncol = n_comp)
+      rank_match_count <- 0L
+      n_valid <- 0L
 
       for (b in seq_len(B)) {
         idx <- sample.int(n_samples, size = max(2L, floor(sample_frac * n_samples)),
@@ -1569,6 +1571,8 @@ assess_stability <- function(ajive_output = NULL,
         bs <- fit_b$joint_scores
         n_use <- min(ncol(bs), n_comp)
         if (n_use < 1L) next
+        n_valid <- n_valid + 1L
+        if (ncol(bs) == n_comp) rank_match_count <- rank_match_count + 1L
         # Align bootstrap components to the reference subspace to resolve
         # sign and order ambiguity before per-component correlations.
         ref_sub <- ref[idx, seq_len(n_use), drop = FALSE]
@@ -1584,12 +1588,14 @@ assess_stability <- function(ajive_output = NULL,
         }
       }
 
-      data.frame(
+      result <- data.frame(
         component = seq_len(n_comp),
         mean_correlation = apply(cor_mat, 2L, mean, na.rm = TRUE),
         sd_correlation = apply(cor_mat, 2L, stats::sd, na.rm = TRUE),
         stringsAsFactors = FALSE
       )
+      attr(result, "rank_match_rate") <- if (n_valid > 0L) rank_match_count / n_valid else NA_real_
+      result
     }
   )
 }

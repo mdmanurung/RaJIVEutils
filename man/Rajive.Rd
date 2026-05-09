@@ -12,7 +12,8 @@ Rajive(
   n_rand_dir_samples = 1000,
   joint_rank = NA,
   n_perm_samples = NA,
-  num_cores = 1L
+  num_cores = 1L,
+  seed = NA_integer_
 )
 }
 \arguments{
@@ -33,18 +34,20 @@ to save memory.}
 draw per block. Default \code{1000}.}
 
 \item{n_rand_dir_samples}{Positive integer. Number of random-direction
-bound samples to draw. Default \code{1000}. Ignored when
-\code{n_perm_samples} is supplied.}
+bound samples to draw. Default \code{1000}. When both
+\code{n_rand_dir_samples} and \code{n_perm_samples} are supplied, both
+bounds are computed independently and the maximum is used as the threshold.}
 
 \item{joint_rank}{Integer or \code{NA}. User-specified joint rank. When
 \code{NA} (default) the joint rank is estimated from the data.}
 
 \item{n_perm_samples}{Integer or \code{NA}. Number of permutation samples
-for the permutation-based joint-rank threshold. When supplied, replaces
-the random-direction bound: rows of each block's signal scores are
-independently shuffled, the leading squared singular value of the
-stacked permuted matrix is recorded, and its 95th percentile is used
-as the threshold. Permutation takes precedence when both are set.
+for the permutation-based joint-rank threshold.  Rows of each block's
+signal scores are independently shuffled, the leading squared singular
+value of the stacked permuted matrix is recorded, and its 95th percentile
+is used as the threshold.  When both \code{n_perm_samples} and
+\code{n_rand_dir_samples} are supplied, both are computed and their
+maximum (together with the Wedin bound) is the final threshold.
 Default \code{NA}.}
 
 \item{num_cores}{Positive integer. Number of cores to use for parallel
@@ -84,9 +87,8 @@ is resistant to a moderate fraction of element-wise outliers in any block.
 \details{
 Joint rank is selected by comparing the squared common singular values of
 the stacked signal-score matrix to a threshold derived from a Wedin bound
-and either a random-direction bound (default) or a permutation bound
-(when \code{n_perm_samples} is supplied). The combined threshold is
-\code{max(wedin, rand_dir | perm)}; this heuristic is conservative in
+and a random-direction bound, a permutation bound, or both.  The combined
+threshold is \code{max(wedin, rand_dir, perm)}; this heuristic is conservative in
 practice but does not carry a formal FWER/FDR guarantee for rank
 selection (see \code{StatisticalAudits.md}, Finding 6).
 }

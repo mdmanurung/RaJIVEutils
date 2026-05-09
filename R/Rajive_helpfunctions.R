@@ -113,7 +113,10 @@ get_wedin_bound_samples <- function(X, SVD, signal_rank, num_samples=1000,
   withCallingHandlers(
     expr,
     warning = function(w) {
-      if (grepl("was built under R version", conditionMessage(w), fixed = TRUE)) {
+      if (grepl(
+        "was built under R version|loaded from a different R version|namespace .+ is not available",
+        conditionMessage(w), perl = TRUE
+      )) {
         invokeRestart("muffleWarning")
       }
     }
@@ -187,19 +190,18 @@ seed <- sample.int(.Machine$integer.max, 1L)
 doParallel::registerDoParallel(numCores)
 on.exit(doParallel::stopImplicitCluster(), add = TRUE)
 
-# Audit perf #9, #10: the random-direction bound resamples i.i.d. Gaussian
-# noise.  There is no contamination, so the M-estimator robust SVD is
-# unnecessary (and ~10-100x slower than base svd()).  We only need an
-# orthonormal basis of each random block plus the leading singular value of
-# the stacked basis.
+# Use the M-estimator robust SVD throughout for consistency with the rest
+# of the pipeline (the package's design choice is to remain robust even on
+# nominally clean inputs).
 rand_dir_samples <- .suppress_worker_build_warnings(
   foreach::foreach (s=1:num_samples, .options.RNG = seed) %dorng% {
 
   X <- lapply(dims1, function(l) matrix(rnorm(n_obs * l, mean=0,sd=1), n_obs, l))
-  rand_subspaces <- lapply(X, function(l) svd(l, nu = ncol(l), nv = 0)$u)
+  rand_subspaces <- lapply(X, function(l) get_svd_robustH(l)[['u']])
 
   M <- do.call(cbind, rand_subspaces)
-  d1 <- svd(M, nu = 0, nv = 0)$d[1L]
+  M_svd <- get_svd_robustH(M, rank = 1L)
+  d1 <- M_svd[['d']][1L]
 
   d1^2
 
@@ -237,9 +239,8 @@ get_perm_bound_robustH <- function(block_svd, initial_signal_ranks,
   doParallel::registerDoParallel(numCores)
   on.exit(doParallel::stopImplicitCluster(), add = TRUE)
 
-  # Audit perf #9: only the leading squared singular value is needed; the
-  # input is just permuted left-singular vectors of each block (already
-  # well-conditioned).  Use base svd() instead of the iterative robust SVD.
+  # Use the M-estimator robust SVD for consistency with the random-direction
+  # bound and the rest of the pipeline.
   perm_samples <- .suppress_worker_build_warnings(
     foreach::foreach(s = 1:num_samples, .options.RNG = seed) %dorng% {
     Uperm <- lapply(seq_len(K), function(k) {
@@ -247,7 +248,7 @@ get_perm_bound_robustH <- function(block_svd, initial_signal_ranks,
       block_svd[[k]][["u"]][pi_k, 1:initial_signal_ranks[k], drop = FALSE]
     })
     M_perm <- do.call(cbind, Uperm)
-    svd(M_perm, nu = 0, nv = 0)$d[1L]^2
+    get_svd_robustH(M_perm, rank = 1L)[['d']][1L]^2
   })
 
   as.numeric(perm_samples)

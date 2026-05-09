@@ -218,24 +218,17 @@ generate_null_f_stats <- function(X_t, joint_comp_scores, n_null) {
 #'   at the cost of computation time.  Default \code{10}; recommended
 #'   \code{50}--\code{100} for publication-quality results.
 #' @param correction Character string controlling multiple-testing correction.
-#'   One of \code{"BY"} (default), \code{"BH"}, \code{"bonferroni"}, or
+#'   One of \code{"BH"} (default), \code{"BY"}, \code{"bonferroni"}, or
 #'   \code{"none"}.  Adjustments are applied globally across all
 #'   block/component/feature tests in the returned object.
-#'   \code{"BY"} (Benjamini--Yekutieli) controls the FDR under arbitrary
-#'   dependency structure among tests; it is preferred for omics data because
-#'   nearby genomic features are often correlated.  \code{"BH"}
-#'   (Benjamini--Hochberg) also controls FDR but assumes positive regression
-#'   dependency (PRDS), which omics blocks may violate --- use it only when
-#'   the dependency structure is known to be PRDS or features are nearly
-#'   independent.  \code{"bonferroni"} controls the family-wise error rate
-#'   by dividing \code{alpha} by the total number of tests.
-#' @note \strong{Default correction is \code{"BY"}}, not \code{"BH"}. The
-#'   Benjamini--Yekutieli correction is valid under arbitrary dependency
-#'   structure, whereas Benjamini--Hochberg requires positive regression
-#'   dependency (PRDS). In omics blocks, neighboring features are often
-#'   correlated; using \code{"BH"} in that setting can inflate the
-#'   false-discovery rate beyond the nominal level (Benjamini & Yekutieli
-#'   2001, \emph{Ann. Statist.} 29(4):1165--1188).
+#'   \code{"BH"} (Benjamini--Hochberg) controls FDR under positive regression
+#'   dependency (PRDS).  \code{"BY"} (Benjamini--Yekutieli) controls FDR under
+#'   arbitrary dependency; use it when neighbouring features are strongly
+#'   correlated (e.g. genomic windows).  \code{"bonferroni"} controls the
+#'   family-wise error rate.
+#' @note The default correction was changed from \code{"BY"} back to \code{"BH"}
+#'   starting with version 0.3.0.  For strongly correlated omics blocks, switch
+#'   to \code{correction = "BY"} for FDR control under arbitrary dependency.
 #'
 #' @param pip Logical; if \code{TRUE}, compute posterior inclusion probabilities
 #'   (PIPs) for each feature via \code{qvalue::lfdr()}.  Requires the
@@ -244,11 +237,20 @@ generate_null_f_stats <- function(X_t, joint_comp_scores, n_null) {
 #'   \code{NULL} (default), \code{qvalue::lfdr()} estimates \eqn{\pi_0}
 #'   automatically.
 #' @param pip_group Character string controlling how features are grouped when
-#'   computing PIPs.  One of \code{"component"} (default; one lfdr call per
-#'   joint component across all blocks), \code{"block_component"} (one call
-#'   per block \eqn{\times} component combination), or \code{"pooled"} (a
-#'   single lfdr call over all tests).  Larger groups give more stable
-#'   \eqn{\pi_0} estimates; smaller groups allow \eqn{\pi_0} to vary.
+#'   computing PIPs.  One of \code{"pooled"} (default; a single lfdr call over
+#'   all tests), \code{"component"} (one call per joint component across all
+#'   blocks), or \code{"block_component"} (one call per block \eqn{\times}
+#'   component combination).  Larger groups give more stable \eqn{\pi_0}
+#'   estimates and are recommended when each block/component has fewer than
+#'   ~200 features; smaller groups allow \eqn{\pi_0} to vary across components.
+#' @param pool Character string controlling how null F-statistics are pooled
+#'   when computing empirical p-values within each block.  One of
+#'   \code{"block"} (default; null statistics from all joint components are
+#'   pooled together for each block, giving a \eqn{d_k \times
+#'   (J \cdot n_{null})} pool) or \code{"global"} (the original per-component
+#'   behaviour: a separate \eqn{d_k \times n_{null}} pool is used for each
+#'   block/component pair).  Block pooling is more statistically defensible
+#'   when features within a block have comparable noise levels.
 #'
 #' @return An object of class \code{"jackstraw_rajive"}: a named list with one
 #'   element per block (\code{block1}, \code{block2}, \ldots).  Each element
@@ -317,14 +319,16 @@ generate_null_f_stats <- function(X_t, joint_comp_scores, n_null) {
 jackstraw_rajive <- function(ajive_output, blocks,
                              alpha      = 0.05,
                              n_null     = 10,
-                             correction = c("BY", "BH", "bonferroni", "none"),
+                             correction = c("BH", "BY", "bonferroni", "none"),
                              pip        = FALSE,
                              pip_pi0    = NULL,
-                             pip_group  = c("component", "block_component",
-                                            "pooled")) {
+                             pip_group  = c("pooled", "block_component",
+                                            "component"),
+                             pool       = c("block", "global")) {
 
   correction <- match.arg(correction)
   pip_group  <- match.arg(pip_group)
+  pool       <- match.arg(pool)
 
   if (!is.logical(pip) || length(pip) != 1L) {
     stop("'pip' must be TRUE or FALSE.", call. = FALSE)
@@ -365,22 +369,37 @@ jackstraw_rajive <- function(ajive_output, blocks,
   total_tests <- sum(vapply(blocks, ncol, integer(1L))) * joint_rank
 
   for (k in seq_len(K)) {
-    X   <- blocks[[k]]
-    X_t <- t(X)          # d x n
-    d_k <- ncol(X)
+    X      <- blocks[[k]]
+    X_t    <- t(X)          # d x n
+    d_k    <- ncol(X)
+    feat_names <- colnames(X)
+
+    # Pre-generate all F-statistics for this block (enables block pooling).
+    f_obs_list  <- vector("list", joint_rank)
+    f_null_list <- vector("list", joint_rank)
+    for (j in seq_len(joint_rank)) {
+      scores_j         <- joint_scores[, j]
+      f_obs_list[[j]]  <- ols_f_stat_matrix(X_t, scores_j)
+      f_null_list[[j]] <- generate_null_f_stats(X_t, scores_j, n_null)
+    }
+
+    # Build the null pool used for p-value computation.
+    f_null_pool <- if (pool == "block") {
+      do.call(cbind, f_null_list)   # d_k x (joint_rank * n_null)
+    } else {
+      NULL  # computed per-component below
+    }
 
     block_results <- vector("list", joint_rank)
     names(block_results) <- paste0("comp", seq_len(joint_rank))
 
     for (j in seq_len(joint_rank)) {
-      scores_j <- joint_scores[, j]
+      f_obs       <- f_obs_list[[j]]
+      f_null      <- f_null_list[[j]]
+      f_null_for_p <- if (pool == "block") f_null_pool else f_null
+      p_vals      <- compute_empirical_pvalues(f_obs, f_null_for_p)
 
-      f_obs  <- ols_f_stat_matrix(X_t, scores_j)
-      f_null <- generate_null_f_stats(X_t, scores_j, n_null)
-      p_vals <- compute_empirical_pvalues(f_obs, f_null)
-
-      # Attach variable names where available
-      feat_names <- colnames(X)
+      # Attach variable names where available.
       if (!is.null(feat_names)) {
         names(f_obs)  <- feat_names
         names(p_vals) <- feat_names
