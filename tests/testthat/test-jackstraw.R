@@ -162,11 +162,30 @@ test_that("BH adjustment is applied globally across blocks and components", {
   expect_equal(observed_adj, expected_adj)
 })
 
-test_that("default correction is BH", {
+test_that("default correction is BY", {
   res <- make_simple_ajive(seed = 11L)
   js <- jackstraw_rajive(res$ajive_out, res$blocks, n_null = 5)
 
-  expect_identical(attr(js, "correction"), "BH")
+  expect_identical(attr(js, "correction"), "BY")
+})
+
+test_that("BY adjustment is applied globally across blocks and components", {
+  res <- make_simple_ajive(seed = 123L)
+
+  set.seed(321L)
+  js_by <- jackstraw_rajive(res$ajive_out, res$blocks,
+                            alpha = 0.05, n_null = 10,
+                            correction = "BY")
+
+  raw_p <- unlist(lapply(js_by, function(block_result) {
+    unlist(lapply(block_result, `[[`, "p_values"), use.names = FALSE)
+  }), use.names = FALSE)
+  expected_adj <- p.adjust(raw_p, method = "BY")
+  observed_adj <- unlist(lapply(js_by, function(block_result) {
+    unlist(lapply(block_result, `[[`, "p_adj"), use.names = FALSE)
+  }), use.names = FALSE)
+
+  expect_equal(observed_adj, expected_adj)
 })
 
 # ---------------------------------------------------------------------------

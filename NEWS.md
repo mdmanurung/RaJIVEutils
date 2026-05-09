@@ -39,6 +39,22 @@
   all ~38 exported functions with simulated examples, plots, and
   interpretation notes.
 
+- Added `vignettes/microbiome_application.Rmd`: end-to-end RaJIVE workflow
+  on a multi-kingdom gut microbiome dataset (Haak et al. 2021; bacteria,
+  fungi, viruses). Demonstrates rank selection, variance decomposition,
+  joint/individual score inspection, association testing, and bootstrap
+  stability.
+
+## Other changes
+
+- `data_heatmap()` is now exported. The internal `geom_raster()` mapping now
+  uses `scale_y_discrete()` / `scale_x_discrete()` (previously
+  `scale_y_continuous()` / `scale_x_continuous()`), which correctly matches
+  the factor-encoded axes and eliminates ggplot2 warnings.
+
+- `get_perm_bound_robustH()` is now marked `@keywords internal`; it no longer
+  appears in the pkgdown reference index.
+
 ---
 
 # rajiveplus 0.1.0

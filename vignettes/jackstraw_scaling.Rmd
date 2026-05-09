@@ -41,8 +41,11 @@ This vignette benchmarks these three axes and provides a practical guide for
 choosing `n_null` given data size.
 
 All timing/memory runs use the current `jackstraw_rajive()` default
-multiple-testing behavior (`correction = "BH"`), applied globally across
-all block/component/feature tests in each run.
+multiple-testing behavior (`correction = "BY"`, Benjamini--Yekutieli),
+applied globally across all block/component/feature tests in each run.
+BY controls FDR under arbitrary feature dependence; pass
+`correction = "BH"` explicitly if you prefer the less conservative
+Benjamini--Hochberg procedure (valid only under positive regression dependency).
 
 ---
 
