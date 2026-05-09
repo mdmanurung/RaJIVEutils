@@ -590,11 +590,16 @@ get_joint_decomposition_robustH <- function(X, joint_scores, full=TRUE){
 
   J <-  joint_scores %*% t(joint_scores) %*% X
 
-  # Use the M-estimator robust SVD for consistency with the rest of the
-  # pipeline. J is rank `joint_rank` by construction; truncate to that rank.
-  joint_decomposition <- get_svd_robustH(J, rank = joint_rank)
-  joint_decomposition <- truncate_svd(decomposition = joint_decomposition,
-                                      rank          = joint_rank)
+  # Exact low-rank decomposition: if J = U U^T X with U orthonormal,
+  # then SVD(U^T X) = U_small D V^T implies J = (U U_small) D V^T.
+  # This avoids an unnecessary robust M-estimation pass on rank-joint_rank J.
+  B <- t(joint_scores) %*% X
+  B_svd <- svd(B, nu = joint_rank, nv = joint_rank)
+  joint_decomposition <- list(
+    u = joint_scores %*% B_svd$u,
+    d = B_svd$d,
+    v = B_svd$v
+  )
 
   if(full){
     joint_decomposition[['full']] <- J

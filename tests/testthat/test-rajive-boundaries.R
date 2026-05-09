@@ -96,3 +96,26 @@ test_that("get_joint_decomposition_robustH zero-rank still produces zero-column 
   expect_equal(ncol(jd$v), 0L)
   expect_equal(length(jd$d), 0L)
 })
+
+test_that("get_joint_decomposition_robustH reconstructs U U^T X", {
+  set.seed(123)
+  n <- 30L
+  p <- 20L
+  r <- 3L
+
+  X <- matrix(rnorm(n * p), n, p)
+  Q <- qr.Q(qr(matrix(rnorm(n * r), n, r)))
+
+  jd <- rajiveplus:::get_joint_decomposition_robustH(
+    X,
+    joint_scores = Q,
+    full = FALSE
+  )
+
+  J_target <- Q %*% t(Q) %*% X
+  J_recon <- jd$u %*% diag(jd$d, nrow = length(jd$d)) %*% t(jd$v)
+
+  expect_equal(dim(J_recon), dim(J_target))
+  expect_lt(norm(J_recon - J_target, type = "F"), 1e-8)
+})
+
