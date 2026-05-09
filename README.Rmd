@@ -205,9 +205,12 @@ knitr::include_graphics("man/figures/README-scores-joint-grouped.png")
 
 After running the RaJIVE decomposition, you can test which variables in each data block have statistically significantly non-zero joint loadings using the jackstraw permutation test.
 
-By default, `jackstraw_rajive()` applies global BH correction across all block/component/feature tests.
+By default, `jackstraw_rajive()` applies global BY (Benjamini–Yekutieli) correction
+across all block/component/feature tests, which is valid under arbitrary feature
+dependence. Pass `pip = TRUE` (requires Bioconductor `qvalue`) for posterior inclusion
+probabilities in addition to p-values.
 
-```{r}
+```{r, eval=FALSE}
 # Run jackstraw test (increase n_null to 50-100 for publication-quality results)
 js <- jackstraw_rajive(ajive.results.robust, data.ajive,
                        alpha = 0.05, n_null = 10)
@@ -224,7 +227,7 @@ summary(js)
 
 The package now includes unified helpers for diagnostics, metadata association, and bootstrap stability assessment:
 
-```{r}
+```{r, eval=FALSE}
 # Extract AJIVE rank diagnostics (wide or long format)
 diag_wide <- extract_components(ajive.results.robust, what = "rank_diagnostics")
 diag_long <- extract_components(ajive.results.robust, what = "rank_diagnostics", format = "long")
@@ -246,6 +249,7 @@ associate_components(ajive.results.robust, metadata_df,
                      variable = "group", mode = "categorical")
 
 # Bootstrap stability of estimated joint rank
+# (set B >= 100 for publication use; eval=FALSE here to keep README build fast)
 assess_stability(ajive.results.robust, data.ajive, initial_signal_ranks,
                  target = "joint_rank", B = 20)
 ```
@@ -253,14 +257,14 @@ assess_stability(ajive.results.robust, data.ajive, initial_signal_ranks,
 
 - Retrieve significant variables for a given block and component:
 
-```{r}
+```{r, eval=FALSE}
 get_significant_vars(js, block = 1, component = 1)
 ```
 
 
 - Visualize jackstraw results (three plot types available):
 
-```{r}
+```{r, eval=FALSE}
 # P-value histogram
 png("man/figures/README-jackstraw-pvalue-hist.png", width = 1600, height = 900, res = 150)
 print(plot_jackstraw(js, type = "pvalue_hist", block = 1, component = 1))
@@ -341,7 +345,7 @@ knitr::include_graphics("man/figures/README-jackstraw-loadings-significance.png"
 
 | Function | Description |
 |---|---|
-| `jackstraw_rajive()` | Run the jackstraw permutation test to identify features significantly associated with estimated joint scores. Default multiple-testing correction is global BH across all tests. |
+| `jackstraw_rajive()` | Run the jackstraw permutation test to identify features significantly associated with estimated joint scores. Default multiple-testing correction is global BY (Benjamini–Yekutieli; valid under arbitrary dependence). Optional `pip = TRUE` adds posterior inclusion probabilities via `qvalue::lfdr()`. |
 | `print.jackstraw_rajive()` | Print a significance table for a `"jackstraw_rajive"` object. |
 | `summary.jackstraw_rajive()` | Return and print a `data.frame` summary of jackstraw results. |
 | `get_significant_vars()` | Extract significant variable names/indices for a given block and component from jackstraw results. |

@@ -225,6 +225,7 @@ as.numeric(rand_dir_samples)
 #' @return A numeric vector of length \code{num_samples}: leading squared
 #'   singular values of the permuted stacked signal-score matrix under the
 #'   null of no joint structure.
+#' @keywords internal
 #' @importFrom doRNG %dorng%
 
 get_perm_bound_robustH <- function(block_svd, initial_signal_ranks,

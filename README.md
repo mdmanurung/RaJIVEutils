@@ -29,14 +29,17 @@ benchmarks and applied analyses.
 
 ## Development status (May 2026)
 
-- Latest completed validation pass (docs-focused): `devtools::test()`
-  **412/412 PASS**, `devtools::document()` clean, and all vignette
-  `.Rmd` files parse cleanly.
-- Active implementation track is the audit-driven TDD remediation plan
-  (Phase 0 to Phase 5).
-- Immediate next coding action is to create the Phase 0 calibration
-  helper and the first red boundary test (W-H1) before any new
-  production-code changes.
+- Latest completed validation pass: `devtools::test()` **434/434 PASS**,
+  `devtools::document()` clean, all vignette `.Rmd` files parse cleanly.
+- All audit-driven TDD remediation items (Phases 0–5) are implemented on
+  HEAD. Remaining item: slow calibration tests require
+  `RAJIVE_RUN_SLOW=1`; submit via SLURM scripts in `logs/`.
+- **New in this cycle:**
+  - `jackstraw_rajive()` gains optional posterior inclusion
+    probabilities (`pip = TRUE`) via `qvalue::lfdr()`.
+  - Multiple-testing correction default changed from `"BH"` to `"BY"`
+    (Benjamini–Yekutieli), which is valid under arbitrary feature
+    dependence (no PRDS assumption).
 - Live handoff references:
   - [PROGRESS.md](PROGRESS.md) for the operational next command.
   - [PLANS.md](PLANS.md) for strategy, gates, and deferred items.
@@ -423,26 +426,26 @@ js <- jackstraw_rajive(ajive.results.robust, data.ajive,
 # Print a concise summary table
 print(js)
 #> JIVE Jackstraw Significance Test
-#>   Joint rank: 2   Alpha: 0.05   Correction: BH
+#>   Joint rank: 2   Alpha: 0.05   Correction: BY
 #> 
 #>   Block      Component    N features     N significant 
 #>   ----------------------------------------------------
-#>   block1     comp1        100            20            
-#>   block1     comp2        100            26            
-#>   block2     comp1        80             31            
-#>   block2     comp2        80             17            
-#>   block3     comp1        50             11            
-#>   block3     comp2        50             21
+#>   block1     comp1        100            0             
+#>   block1     comp2        100            0             
+#>   block2     comp1        80             0             
+#>   block2     comp2        80             0             
+#>   block3     comp1        50             0             
+#>   block3     comp2        50             0
 
 # Get a data frame summary
 summary(js)
 #>   block component n_features n_significant alpha correction
-#>  block1     comp1        100            20  0.05         BH
-#>  block1     comp2        100            26  0.05         BH
-#>  block2     comp1         80            31  0.05         BH
-#>  block2     comp2         80            17  0.05         BH
-#>  block3     comp1         50            11  0.05         BH
-#>  block3     comp2         50            21  0.05         BH
+#>  block1     comp1        100             0  0.05         BY
+#>  block1     comp2        100             0  0.05         BY
+#>  block2     comp1         80             0  0.05         BY
+#>  block2     comp2         80             0  0.05         BY
+#>  block3     comp1         50             0  0.05         BY
+#>  block3     comp2         50             0  0.05         BY
 ```
 
 ### AJIVE diagnostics and interpretation helpers
@@ -520,7 +523,7 @@ assess_stability(ajive.results.robust, data.ajive, initial_signal_ranks,
 
 ``` r
 get_significant_vars(js, block = 1, component = 1)
-#>  [1] 11 16 19 23 24 25 30 32 36 43 46 56 60 62 71 78 80 90 91 94
+#> integer(0)
 ```
 
 - Visualize jackstraw results (three plot types available):

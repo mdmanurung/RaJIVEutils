@@ -32,3 +32,4 @@ sample (row) order of each block's signal scores. This provides a
 data-driven alternative to the random direction bound that respects the
 actual noise distribution of each block.
 }
+\keyword{internal}
