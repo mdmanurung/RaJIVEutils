@@ -70,6 +70,10 @@
   allows analysis to continue when a small fraction of constant features are
   present (e.g. batch-invariant housekeeping genes).
 
+- `truncate_svd(rank = 0)` now returns zero-column `u` and `v` matrices
+  instead of `n x 1` zero placeholders.  This keeps internal rank bookkeeping
+  consistent for zero-rank decompositions.
+
 - Added `n_perm_samples` argument to `Rajive()` (default `NA`, no behaviour
   change). When non-NA, a non-parametric permutation-based joint-rank
   threshold is computed by independently permuting the row order of each

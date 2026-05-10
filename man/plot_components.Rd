@@ -88,8 +88,9 @@ A \code{ggplot} object (or a \pkg{patchwork} composite for
   \code{plot_type = "ajive_diagnostic"}).
 }
 \description{
-Produces diagnostic plots from the output of \code{\link{Rajive}}.  Three
-plot types are supported:
+Produces diagnostic and interpretation plots from \code{\link{Rajive}},
+\code{\link{jackstraw_rajive}}, association, and stability outputs.
+Supported plot types include:
 \describe{
   \item{\code{"rank_threshold"}}{Squared observed singular values with
     Wedin and/or random-direction cutoff lines, colored by joint/nonjoint
@@ -102,15 +103,25 @@ plot types are supported:
   \item{\code{"ajive_diagnostic"}}{Full composite panel combining the
     threshold plot (top) with bound-distribution histograms (bottom).
     Requires the \pkg{patchwork} package.}
+  \item{\code{"pairs"}, \code{"density"}}{Score scatter or density plots.}
+  \item{\code{"top_features"}, \code{"component_heatmap"}}{Feature-loading
+    summaries from the decomposition.}
+  \item{\code{"variance"}}{Variance explained across blocks; requires
+    \code{blocks}.}
+  \item{\code{"association"}}{Association-result summary plots.}
+  \item{\code{"volcano"}, \code{"jackstraw_summary"}}{Jackstraw
+    significance plots; require \code{jackstraw_result}.}
+  \item{\code{"stability"}}{Bootstrap stability summaries; requires
+    \code{stability_result}.}
 }
 }
 \section{Variance explained language}{
 
-  When variance-explained plots are added in a future phase, outputs will
-  distinguish \emph{joint} variance explained from
+  Variance plots distinguish \emph{joint} variance explained from
   \emph{block-specific individual} variance explained after joint signal
   removal.  The two quantities are not interchangeable and should not be
-  described with generic PCA-style language (StatisticalAudits.md, Finding 7).
+  described with generic PCA-style language (StatisticalAudits.md,
+  Finding 7).
 }
 
 \examples{

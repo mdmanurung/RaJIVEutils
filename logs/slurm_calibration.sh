@@ -23,12 +23,16 @@
 
 cd /exports/para-lipg-hpc/mdmanurung/RaJIVEutils
 
-source /exports/archive/hg-funcgenom-research/mdmanurung/conda/etc/profile.d/conda.sh
-conda activate R4_51
+if ! command -v conda >/dev/null 2>&1; then
+  echo "conda command not found on compute node"
+  exit 127
+fi
 
 export RAJIVE_RUN_SLOW=1
 
-/exports/archive/hg-funcgenom-research/mdmanurung/conda/envs/R4_51/bin/Rscript \
+conda run -n R4_51 Rscript \
   -e "devtools::test(filter='calibration', reporter='progress')"
 
-echo "EXIT CODE: $?"
+CAL_EXIT=$?
+echo "EXIT CODE: $CAL_EXIT"
+exit $CAL_EXIT

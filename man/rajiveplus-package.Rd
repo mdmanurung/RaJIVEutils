@@ -6,7 +6,32 @@
 \alias{rajiveplus-package}
 \title{rajiveplus: Robust Angle Based Joint and Individual Variation Explained}
 \description{
-Blazing fast re-implementation of the RAJIVE algorithm for joint and individual variation explained in multi-view data. This package provides a user-friendly interface to perform RAJIVE analysis, along with tools for visualization and interpretation of results.
+Fast, robust tools for decomposing matched multi-block data into shared
+joint, block-specific individual, and residual components. The main entry
+point is \code{\link{Rajive}}, which returns an object of class
+\code{"rajive"} with rank-selection diagnostics and component SVDs.
+}
+\details{
+The package also provides:
+\describe{
+  \item{Simulation and robust SVD utilities}{\code{\link{ajive.data.sim}},
+    \code{\link{RobRSVD.all}}, \code{\link{RobRSVD1}}.}
+  \item{Component accessors}{\code{\link{get_joint_scores}},
+    \code{\link{get_block_scores}}, \code{\link{get_block_loadings}},
+    \code{\link{get_block_matrix}}, and \code{\link{extract_components}}.}
+  \item{Diagnostics and plotting}{\code{\link{plot_components}},
+    \code{\link{plot_variance_explained}}, \code{\link{plot_scores}},
+    \code{\link{decomposition_heatmaps_robustH}}, and ggplot2
+    \code{autoplot}/\code{fortify} methods.}
+  \item{Feature interpretation}{\code{\link{jackstraw_rajive}},
+    \code{\link{rank_features}}, \code{\link{get_significant_vars}},
+    posterior inclusion probabilities, and jackstraw plots.}
+  \item{Metadata and stability helpers}{\code{\link{associate_components}},
+    \code{\link{assess_stability}}, \code{\link{summarize_components}},
+    \code{\link{export_results}}, and \code{\link{rajive_report}}.}
+}
+
+See \code{browseVignettes("rajiveplus")} for worked examples.
 }
 \seealso{
 Useful links:

@@ -40,20 +40,23 @@ for benchmarks and applied analyses.
 
 ## Development status (May 2026)
 
-- Latest completed validation pass: `devtools::test()` **434/434 PASS**,
-  `devtools::document()` clean, all vignette `.Rmd` files parse cleanly.
-- All audit-driven TDD remediation items (Phases 0–5) are implemented
-  on HEAD.  Remaining item: slow calibration tests require
-  `RAJIVE_RUN_SLOW=1`; submit via SLURM scripts in `logs/`.
+- Latest completed fast validation gate: **466 PASS, 0 FAIL, 0 WARN,
+  7 SKIP** with slow calibration skipped; `devtools::document()` was clean.
+- Audit-driven implementation work through Phase R is on HEAD. Remaining
+  release work is validation only: Gate 2--4 and the dependent slow
+  calibration job are tracked in `PROGRESS.md`.
 - **New in this cycle:**
   - `jackstraw_rajive()` gains optional posterior inclusion probabilities
     (`pip = TRUE`) via `qvalue::lfdr()`.
-  - Multiple-testing correction default changed from `"BH"` to `"BY"`
-    (Benjamini–Yekutieli), which is valid under arbitrary feature
-    dependence (no PRDS assumption).
+  - `jackstraw_rajive()` defaults to global `"BH"` (Benjamini--Hochberg)
+    adjustment again; pass `correction = "BY"` for the more conservative
+    Benjamini--Yekutieli procedure under arbitrary feature dependence.
+  - Joint-rank selection records Wedin, random-direction, and optional
+    permutation-bound diagnostics for downstream plotting and auditing.
 - Live handoff references:
   - [PROGRESS.md](PROGRESS.md) for the operational next command.
-  - [PLANS.md](PLANS.md) for strategy, gates, and deferred items.
+  - [audits/PLANS.md](audits/PLANS.md) for strategy, gates, and deferred
+    items.
 
 ## Installation
 
@@ -205,15 +208,27 @@ knitr::include_graphics("man/figures/README-scores-joint-grouped.png")
 
 After running the RaJIVE decomposition, you can test which variables in each data block have statistically significantly non-zero joint loadings using the jackstraw permutation test.
 
-By default, `jackstraw_rajive()` applies global BY (Benjamini–Yekutieli) correction
-across all block/component/feature tests, which is valid under arbitrary feature
-dependence. Pass `pip = TRUE` (requires Bioconductor `qvalue`) for posterior inclusion
-probabilities in addition to p-values.
+By default, `jackstraw_rajive()` applies global BH (Benjamini--Hochberg)
+correction across all block/component/feature tests. BH is appropriate under
+positive regression dependency; pass `correction = "BY"` for the more
+conservative Benjamini--Yekutieli adjustment under arbitrary feature
+dependence. Pass `pip = TRUE` (requires Bioconductor `qvalue`) for posterior
+inclusion probabilities in addition to p-values.
 
 ```{r, eval=FALSE}
 # Run jackstraw test (increase n_null to 50-100 for publication-quality results)
 js <- jackstraw_rajive(ajive.results.robust, data.ajive,
                        alpha = 0.05, n_null = 10)
+
+# Conservative FDR adjustment for strongly dependent features
+js_by <- jackstraw_rajive(ajive.results.robust, data.ajive,
+                          alpha = 0.05, n_null = 10,
+                          correction = "BY")
+
+# Posterior inclusion probabilities via qvalue::lfdr()
+js_pip <- jackstraw_rajive(ajive.results.robust, data.ajive,
+                           alpha = 0.05, n_null = 10,
+                           pip = TRUE)
 
 # Print a concise summary table
 print(js)
@@ -291,8 +306,9 @@ knitr::include_graphics("man/figures/README-jackstraw-loadings-significance.png"
 
 | Function | Description |
 |---|---|
-| `Rajive()` | Run the RaJIVE decomposition on a list of data matrices. Returns an object of class `"rajive"`. |
+| `Rajive()` | Run the RaJIVE decomposition on a list of data matrices. Returns an object of class `"rajive"` with joint, individual, and residual decompositions plus joint-rank diagnostics. |
 | `ajive.data.sim()` | Simulate multi-block data with known joint and individual structure for testing and benchmarking. |
+| `sim_dist()` | Generate centred simulation noise distributions used by `ajive.data.sim()`. |
 
 ### Rank accessors
 
@@ -310,6 +326,7 @@ knitr::include_graphics("man/figures/README-jackstraw-loadings-significance.png"
 | `get_block_scores()` | Return the score matrix (U) for a given block and component type (joint or individual). |
 | `get_block_loadings()` | Return the loading matrix (V) for a given block and component type. |
 | `get_block_matrix()` | Return the full reconstructed matrix (J, I, or E) for a given block and component type. |
+| `extract_components()` | Extract scores, loadings, variance tables, jackstraw significance tables, or rank diagnostics in wide or long format. |
 
 ### S3 methods for `"rajive"` objects
 
@@ -329,10 +346,20 @@ knitr::include_graphics("man/figures/README-jackstraw-loadings-significance.png"
 
 | Function | Description |
 |---|---|
-| `extract_components()` | Extract AJIVE rank diagnostics in wide-list or long-data-frame format. |
-| `plot_components()` | Unified AJIVE diagnostic plotting (`rank_threshold`, `bound_distributions`, `ajive_diagnostic`). |
+| `extract_components()` | Extract AJIVE rank diagnostics, scores, loadings, variance summaries, or jackstraw significance in wide-list or long-data-frame format. |
+| `plot_components()` | Unified diagnostic and interpretation plotting, including `rank_threshold`, `bound_distributions`, and `ajive_diagnostic`. |
+| `rank_features()` | Rank top loadings, feature contributions, cross-block feature-set overlap, or jackstraw-significant features. |
+| `get_top_loadings()` | Thin wrapper around `rank_features(mode = "top_loadings")`. |
+| `get_feature_contributions()` | Thin wrapper around `rank_features(mode = "contribution")`. |
+| `compare_feature_sets_across_blocks()` | Thin wrapper around `rank_features(mode = "overlap")`. |
+| `summarize_significant_vars()` | Thin wrapper around `rank_features(mode = "significant")`. |
+| `summarize_components()` | Summarize ranks, variance, significance counts, associations, or stability output. |
 | `associate_components()` | Test associations between estimated component scores and sample metadata. |
-| `assess_stability()` | Bootstrap-based stability assessment for joint rank or loadings (with Procrustes alignment for loadings). |
+| `associate_scores_continuous()` / `associate_scores_categorical()` / `associate_scores_survival()` | Compatibility wrappers for common association modes. |
+| `assess_stability()` | Bootstrap-based stability assessment for joint rank, loadings, or components, with Procrustes alignment where needed. |
+| `bootstrap_joint_rank()` / `bootstrap_loading_stability()` | Compatibility wrappers around `assess_stability()`. |
+| `export_results()` | Export tables, R objects, and lists of ggplot objects. |
+| `rajive_report()` | Build a lightweight HTML or Markdown interpretation report. |
 
 ### Visualisation
 
@@ -340,12 +367,16 @@ knitr::include_graphics("man/figures/README-jackstraw-loadings-significance.png"
 |---|---|
 | `decomposition_heatmaps_robustH()` | Heatmaps of the raw data and the joint, individual, and noise components for all blocks. |
 | `plot_scores()` | Scatter plot of two score components for a given block (joint or individual), with optional group colouring. |
+| `plot_components()` | Unified plotting entry point for score pairs/densities, top features, component heatmaps, variance, associations, jackstraw summaries, stability, and rank diagnostics. |
+| `plot_stability_heatmap()` | Compatibility wrapper for stability plots. |
+| `autoplot.rajive()` / `autoplot.jackstraw_rajive()` | `ggplot2::autoplot()` methods for decomposition and jackstraw objects. |
+| `fortify.rajive()` / `fortify.jackstraw_rajive()` | `ggplot2::fortify()` methods for tidy plotting data. |
 
 ### Jackstraw significance testing
 
 | Function | Description |
 |---|---|
-| `jackstraw_rajive()` | Run the jackstraw permutation test to identify features significantly associated with estimated joint scores. Default multiple-testing correction is global BY (Benjamini–Yekutieli; valid under arbitrary dependence). Optional `pip = TRUE` adds posterior inclusion probabilities via `qvalue::lfdr()`. |
+| `jackstraw_rajive()` | Run the jackstraw permutation test to identify features significantly associated with estimated joint scores. Default multiple-testing correction is global BH; optional `correction = "BY"` gives conservative arbitrary-dependence control. Optional `pip = TRUE` adds posterior inclusion probabilities via `qvalue::lfdr()`. |
 | `print.jackstraw_rajive()` | Print a significance table for a `"jackstraw_rajive"` object. |
 | `summary.jackstraw_rajive()` | Return and print a `data.frame` summary of jackstraw results. |
 | `get_significant_vars()` | Extract significant variable names/indices for a given block and component from jackstraw results. |

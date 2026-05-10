@@ -29,20 +29,24 @@ benchmarks and applied analyses.
 
 ## Development status (May 2026)
 
-- Latest completed validation pass: `devtools::test()` **434/434 PASS**,
-  `devtools::document()` clean, all vignette `.Rmd` files parse cleanly.
-- All audit-driven TDD remediation items (Phases 0–5) are implemented on
-  HEAD. Remaining item: slow calibration tests require
-  `RAJIVE_RUN_SLOW=1`; submit via SLURM scripts in `logs/`.
+- Latest completed fast validation gate: **466 PASS, 0 FAIL, 0 WARN, 7
+  SKIP** with slow calibration skipped; `devtools::document()` was
+  clean.
+- Audit-driven implementation work through Phase R is on HEAD. Remaining
+  release work is validation only: Gate 2–4 and the dependent slow
+  calibration job are tracked in `PROGRESS.md`.
 - **New in this cycle:**
   - `jackstraw_rajive()` gains optional posterior inclusion
     probabilities (`pip = TRUE`) via `qvalue::lfdr()`.
-  - Multiple-testing correction default changed from `"BH"` to `"BY"`
-    (Benjamini–Yekutieli), which is valid under arbitrary feature
-    dependence (no PRDS assumption).
+  - `jackstraw_rajive()` defaults to global `"BH"` (Benjamini–Hochberg)
+    adjustment again; pass `correction = "BY"` for the more conservative
+    Benjamini–Yekutieli procedure under arbitrary feature dependence.
+  - Joint-rank selection records Wedin, random-direction, and optional
+    permutation-bound diagnostics for downstream plotting and auditing.
 - Live handoff references:
   - [PROGRESS.md](PROGRESS.md) for the operational next command.
-  - [PLANS.md](PLANS.md) for strategy, gates, and deferred items.
+  - [audits/PLANS.md](audits/PLANS.md) for strategy, gates, and deferred
+    items.
 
 ## Installation
 
@@ -192,57 +196,57 @@ get_joint_scores(ajive.results.robust)
 ``` r
 # Joint scores for block 1
 get_block_scores(ajive.results.robust, k = 1, type = "joint")
-#>               [,1]         [,2]
-#>  [1,]  0.068971571  0.109459394
-#>  [2,] -0.075728254 -0.028026891
-#>  [3,]  0.020263259  0.138742275
-#>  [4,] -0.204988688 -0.074017504
-#>  [5,]  0.073208849  0.115586065
-#>  [6,]  0.347993290 -0.105545858
-#>  [7,]  0.018823682 -0.146690450
-#>  [8,] -0.090277936 -0.193149998
-#>  [9,]  0.057757123 -0.079692876
-#> [10,]  0.204003460 -0.248070200
-#> [11,]  0.037169117  0.191981659
-#> [12,] -0.149553887  0.067585356
-#> [13,]  0.224155790 -0.060129458
-#> [14,]  0.118861596  0.183143369
-#> [15,] -0.192713332 -0.063919966
-#> [16,]  0.003840783  0.064053835
-#> [17,] -0.215161712 -0.065468336
-#> [18,]  0.021452491  0.076016047
-#> [19,]  0.034506557 -0.113314041
-#> [20,]  0.134022915  0.188483287
-#> [21,]  0.034148464  0.064205046
-#> [22,] -0.064221743 -0.215805926
-#> [23,]  0.095405531  0.036402411
-#> [24,] -0.004235292  0.025848812
-#> [25,] -0.109402163 -0.224822079
-#> [26,]  0.192543686 -0.110394492
-#> [27,] -0.025120426 -0.087931664
-#> [28,]  0.193135801  0.037689487
-#> [29,]  0.056424314  0.059957535
-#> [30,] -0.225242507 -0.001489703
-#> [31,] -0.116924944 -0.150902144
-#> [32,] -0.079737851  0.045927682
-#> [33,]  0.066687460 -0.029878905
-#> [34,] -0.259139839  0.126860613
-#> [35,]  0.116249415 -0.002281947
-#> [36,]  0.063549699  0.268625516
-#> [37,]  0.152993427  0.132850667
-#> [38,] -0.061480545  0.051577924
-#> [39,] -0.093025417 -0.025937630
-#> [40,] -0.030087540 -0.005964448
-#> [41,] -0.211745739  0.192685628
-#> [42,]  0.200094574 -0.072820905
-#> [43,] -0.024099841  0.253808320
-#> [44,] -0.005223517  0.106781375
-#> [45,]  0.179602688  0.243255159
-#> [46,]  0.088285703  0.202223664
-#> [47,] -0.013242092 -0.366795517
-#> [48,] -0.119809673 -0.050289599
-#> [49,] -0.248232115  0.190795487
-#> [50,] -0.270303322  0.105261822
+#>               [,1]          [,2]
+#>  [1,]  0.067373024 -0.1105018437
+#>  [2,] -0.075585021  0.0296345168
+#>  [3,]  0.017929333 -0.1385129847
+#>  [4,] -0.204633304  0.0783784724
+#>  [5,]  0.071522554 -0.1166955624
+#>  [6,]  0.351433948  0.0969808717
+#>  [7,]  0.021475731  0.1455187624
+#>  [8,] -0.087313164  0.1942638600
+#>  [9,]  0.059415697  0.0779589167
+#> [10,]  0.209277273  0.2421135831
+#> [11,]  0.033981432 -0.1918751879
+#> [12,] -0.151421306 -0.0637927821
+#> [13,]  0.226234627  0.0546519006
+#> [14,]  0.116202825 -0.1849674657
+#> [15,] -0.192478319  0.0680482524
+#> [16,]  0.002738001 -0.0638206618
+#> [17,] -0.215002476  0.0701071420
+#> [18,]  0.020221174 -0.0761293953
+#> [19,]  0.036646671  0.1119479664
+#> [20,]  0.131340212 -0.1906306040
+#> [21,]  0.033181909 -0.0646708719
+#> [22,] -0.060741300  0.2162043498
+#> [23,]  0.095205962 -0.0384222720
+#> [24,] -0.004706826 -0.0256211426
+#> [25,] -0.105971036  0.2262183476
+#> [26,]  0.195356872  0.1053942442
+#> [27,] -0.023697497  0.0880698266
+#> [28,]  0.193361527 -0.0419593277
+#> [29,]  0.055634123 -0.0609590196
+#> [30,] -0.226248527  0.0066827334
+#> [31,] -0.114821237  0.1528435290
+#> [32,] -0.080906548 -0.0438558804
+#> [33,]  0.067515646  0.0281890580
+#> [34,] -0.262546185 -0.1202400216
+#> [35,]  0.116821993 -0.0004135455
+#> [36,]  0.059142296 -0.2687430197
+#> [37,]  0.151370732 -0.1357155226
+#> [38,] -0.062664415 -0.0498992660
+#> [39,] -0.092997985  0.0279551204
+#> [40,] -0.030121078  0.0066291550
+#> [41,] -0.216086283 -0.1868285448
+#> [42,]  0.202285150  0.0678351141
+#> [43,] -0.028649689 -0.2519765780
+#> [44,] -0.007115189 -0.1061242263
+#> [45,]  0.176170807 -0.2461796332
+#> [46,]  0.085153093 -0.2032459357
+#> [47,] -0.006887061  0.3652582182
+#> [48,] -0.119479022  0.0528031365
+#> [49,] -0.252706781 -0.1841054846
+#> [50,] -0.273383030 -0.0984920091
 
 # Individual loadings for block 2
 get_block_loadings(ajive.results.robust, k = 2, type = "individual")
@@ -358,13 +362,13 @@ knitr::include_graphics("man/figures/README-heatmap-1.png")
 ``` r
 showVarExplained_robust(ajive.results.robust, data.ajive)
 #> $Joint
-#> [1] 0.1890473 0.2231528 0.2825003
+#> [1] 0.1888085 0.2233709 0.2823030
 #> 
 #> $Indiv
 #> [1] 0.6481027 0.6106243 0.3768674
 #> 
 #> $Resid
-#> [1] 0.1628501 0.1662229 0.3406323
+#> [1] 0.1630888 0.1660047 0.3408296
 ```
 
 - Proportion of variance explained (as a bar chart):
@@ -415,37 +419,33 @@ After running the RaJIVE decomposition, you can test which variables in
 each data block have statistically significantly non-zero joint loadings
 using the jackstraw permutation test.
 
-By default, `jackstraw_rajive()` applies global BH correction across all
-block/component/feature tests.
+By default, `jackstraw_rajive()` applies global BH (Benjamini–Hochberg)
+correction across all block/component/feature tests. BH is appropriate
+under positive regression dependency; pass `correction = "BY"` for the
+more conservative Benjamini–Yekutieli adjustment under arbitrary feature
+dependence. Pass `pip = TRUE` (requires Bioconductor `qvalue`) for
+posterior inclusion probabilities in addition to p-values.
 
 ``` r
 # Run jackstraw test (increase n_null to 50-100 for publication-quality results)
 js <- jackstraw_rajive(ajive.results.robust, data.ajive,
                        alpha = 0.05, n_null = 10)
 
+# Conservative FDR adjustment for strongly dependent features
+js_by <- jackstraw_rajive(ajive.results.robust, data.ajive,
+                          alpha = 0.05, n_null = 10,
+                          correction = "BY")
+
+# Posterior inclusion probabilities via qvalue::lfdr()
+js_pip <- jackstraw_rajive(ajive.results.robust, data.ajive,
+                           alpha = 0.05, n_null = 10,
+                           pip = TRUE)
+
 # Print a concise summary table
 print(js)
-#> JIVE Jackstraw Significance Test
-#>   Joint rank: 2   Alpha: 0.05   Correction: BY
-#> 
-#>   Block      Component    N features     N significant 
-#>   ----------------------------------------------------
-#>   block1     comp1        100            0             
-#>   block1     comp2        100            0             
-#>   block2     comp1        80             0             
-#>   block2     comp2        80             0             
-#>   block3     comp1        50             0             
-#>   block3     comp2        50             0
 
 # Get a data frame summary
 summary(js)
-#>   block component n_features n_significant alpha correction
-#>  block1     comp1        100             0  0.05         BY
-#>  block1     comp2        100             0  0.05         BY
-#>  block2     comp1         80             0  0.05         BY
-#>  block2     comp2         80             0  0.05         BY
-#>  block3     comp1         50             0  0.05         BY
-#>  block3     comp2         50             0  0.05         BY
 ```
 
 ### AJIVE diagnostics and interpretation helpers
@@ -458,72 +458,32 @@ association, and bootstrap stability assessment:
 diag_wide <- extract_components(ajive.results.robust, what = "rank_diagnostics")
 diag_long <- extract_components(ajive.results.robust, what = "rank_diagnostics", format = "long")
 head(diag_long)
-#>   component_index obs_sval obs_sval_sq classification joint_rank_estimate
-#> 1               1 1.624568    2.639223          joint                   2
-#> 2               2 1.564693    2.448263          joint                   2
-#> 3               3 1.387569    1.925349       nonjoint                   2
-#> 4               4 1.269490    1.611606       nonjoint                   2
-#>   overall_sv_sq_threshold wedin_cutoff rand_cutoff perm_cutoff
-#> 1                2.033129         -997    2.033129          NA
-#> 2                2.033129         -997    2.033129          NA
-#> 3                2.033129         -997    2.033129          NA
-#> 4                2.033129         -997    2.033129          NA
 
 # Unified diagnostic plots
 png("man/figures/README-rank-threshold.png", width = 1600, height = 900, res = 150)
 print(plot_components(ajive.results.robust, plot_type = "rank_threshold"))
 dev.off()
-#> png 
-#>   2
 knitr::include_graphics("man/figures/README-rank-threshold.png")
-```
-
-<img src="man/figures/README-rank-threshold.png" alt="" width="100%" />
-
-``` r
 png("man/figures/README-bound-distributions.png", width = 1600, height = 900, res = 150)
 print(plot_components(ajive.results.robust, plot_type = "bound_distributions"))
 dev.off()
-#> png 
-#>   2
 knitr::include_graphics("man/figures/README-bound-distributions.png")
-```
-
-<img src="man/figures/README-bound-distributions.png" alt="" width="100%" />
-
-``` r
 
 # Associate estimated joint scores with sample-level metadata
 metadata_df <- data.frame(group = rep(c("A", "B"), each = n / 2))
 associate_components(ajive.results.robust, metadata_df,
                      variable = "group", mode = "categorical")
-#> [associate_components] NOTE: Component scores are estimated quantities. Score estimation error is NOT propagated into the returned p-values. Treat results as post-decomposition exploratory associations, not exact fixed-design inference (StatisticalAudits.md, Finding 4).
-#>   variable component      stat   p_value     p_adj  method
-#> 1    group         1 0.4224941 0.5156951 0.5156951 kruskal
-#> 2    group         2 1.5662118 0.2107580 0.4215160 kruskal
 
 # Bootstrap stability of estimated joint rank
+# (set B >= 100 for publication use; eval=FALSE here to keep README build fast)
 assess_stability(ajive.results.robust, data.ajive, initial_signal_ranks,
                  target = "joint_rank", B = 20)
-#> removing column 3
-#> removing column 3
-#> $rank_distribution
-#>  [1] 2 2 2 3 2 4 3 2 2 2 3 2 3 2 3 3 3 3 2 2
-#> 
-#> $rank_table
-#> rank_draws
-#>  2  3  4 
-#> 11  8  1 
-#> 
-#> $observed_rank
-#> [1] 2
 ```
 
 - Retrieve significant variables for a given block and component:
 
 ``` r
 get_significant_vars(js, block = 1, component = 1)
-#> integer(0)
 ```
 
 - Visualize jackstraw results (three plot types available):
@@ -533,38 +493,20 @@ get_significant_vars(js, block = 1, component = 1)
 png("man/figures/README-jackstraw-pvalue-hist.png", width = 1600, height = 900, res = 150)
 print(plot_jackstraw(js, type = "pvalue_hist", block = 1, component = 1))
 dev.off()
-#> png 
-#>   2
 knitr::include_graphics("man/figures/README-jackstraw-pvalue-hist.png")
-```
-
-<img src="man/figures/README-jackstraw-pvalue-hist.png" alt="" width="100%" />
-
-``` r
 
 # F-statistic vs -log10(p-value) scatter plot
 png("man/figures/README-jackstraw-scatter.png", width = 1600, height = 900, res = 150)
 print(plot_jackstraw(js, type = "scatter", block = 1, component = 1))
 dev.off()
-#> png 
-#>   2
 knitr::include_graphics("man/figures/README-jackstraw-scatter.png")
-```
-
-<img src="man/figures/README-jackstraw-scatter.png" alt="" width="100%" />
-
-``` r
 
 # Heatmap of -log10(p-value) across all joint components for one block
 png("man/figures/README-jackstraw-loadings-significance.png", width = 1600, height = 900, res = 150)
 print(plot_jackstraw(js, type = "loadings_significance", block = 1))
 dev.off()
-#> png 
-#>   2
 knitr::include_graphics("man/figures/README-jackstraw-loadings-significance.png")
 ```
-
-<img src="man/figures/README-jackstraw-loadings-significance.png" alt="" width="100%" />
 
 ## Function reference
 
@@ -572,8 +514,9 @@ knitr::include_graphics("man/figures/README-jackstraw-loadings-significance.png"
 
 | Function | Description |
 |----|----|
-| `Rajive()` | Run the RaJIVE decomposition on a list of data matrices. Returns an object of class `"rajive"`. |
+| `Rajive()` | Run the RaJIVE decomposition on a list of data matrices. Returns an object of class `"rajive"` with joint, individual, and residual decompositions plus joint-rank diagnostics. |
 | `ajive.data.sim()` | Simulate multi-block data with known joint and individual structure for testing and benchmarking. |
+| `sim_dist()` | Generate centred simulation noise distributions used by `ajive.data.sim()`. |
 
 ### Rank accessors
 
@@ -591,6 +534,7 @@ knitr::include_graphics("man/figures/README-jackstraw-loadings-significance.png"
 | `get_block_scores()` | Return the score matrix (U) for a given block and component type (joint or individual). |
 | `get_block_loadings()` | Return the loading matrix (V) for a given block and component type. |
 | `get_block_matrix()` | Return the full reconstructed matrix (J, I, or E) for a given block and component type. |
+| `extract_components()` | Extract scores, loadings, variance tables, jackstraw significance tables, or rank diagnostics in wide or long format. |
 
 ### S3 methods for `"rajive"` objects
 
@@ -610,10 +554,20 @@ knitr::include_graphics("man/figures/README-jackstraw-loadings-significance.png"
 
 | Function | Description |
 |----|----|
-| `extract_components()` | Extract AJIVE rank diagnostics in wide-list or long-data-frame format. |
-| `plot_components()` | Unified AJIVE diagnostic plotting (`rank_threshold`, `bound_distributions`, `ajive_diagnostic`). |
+| `extract_components()` | Extract AJIVE rank diagnostics, scores, loadings, variance summaries, or jackstraw significance in wide-list or long-data-frame format. |
+| `plot_components()` | Unified diagnostic and interpretation plotting, including `rank_threshold`, `bound_distributions`, and `ajive_diagnostic`. |
+| `rank_features()` | Rank top loadings, feature contributions, cross-block feature-set overlap, or jackstraw-significant features. |
+| `get_top_loadings()` | Thin wrapper around `rank_features(mode = "top_loadings")`. |
+| `get_feature_contributions()` | Thin wrapper around `rank_features(mode = "contribution")`. |
+| `compare_feature_sets_across_blocks()` | Thin wrapper around `rank_features(mode = "overlap")`. |
+| `summarize_significant_vars()` | Thin wrapper around `rank_features(mode = "significant")`. |
+| `summarize_components()` | Summarize ranks, variance, significance counts, associations, or stability output. |
 | `associate_components()` | Test associations between estimated component scores and sample metadata. |
-| `assess_stability()` | Bootstrap-based stability assessment for joint rank or loadings (with Procrustes alignment for loadings). |
+| `associate_scores_continuous()` / `associate_scores_categorical()` / `associate_scores_survival()` | Compatibility wrappers for common association modes. |
+| `assess_stability()` | Bootstrap-based stability assessment for joint rank, loadings, or components, with Procrustes alignment where needed. |
+| `bootstrap_joint_rank()` / `bootstrap_loading_stability()` | Compatibility wrappers around `assess_stability()`. |
+| `export_results()` | Export tables, R objects, and lists of ggplot objects. |
+| `rajive_report()` | Build a lightweight HTML or Markdown interpretation report. |
 
 ### Visualisation
 
@@ -621,12 +575,16 @@ knitr::include_graphics("man/figures/README-jackstraw-loadings-significance.png"
 |----|----|
 | `decomposition_heatmaps_robustH()` | Heatmaps of the raw data and the joint, individual, and noise components for all blocks. |
 | `plot_scores()` | Scatter plot of two score components for a given block (joint or individual), with optional group colouring. |
+| `plot_components()` | Unified plotting entry point for score pairs/densities, top features, component heatmaps, variance, associations, jackstraw summaries, stability, and rank diagnostics. |
+| `plot_stability_heatmap()` | Compatibility wrapper for stability plots. |
+| `autoplot.rajive()` / `autoplot.jackstraw_rajive()` | `ggplot2::autoplot()` methods for decomposition and jackstraw objects. |
+| `fortify.rajive()` / `fortify.jackstraw_rajive()` | `ggplot2::fortify()` methods for tidy plotting data. |
 
 ### Jackstraw significance testing
 
 | Function | Description |
 |----|----|
-| `jackstraw_rajive()` | Run the jackstraw permutation test to identify features significantly associated with estimated joint scores. Default multiple-testing correction is global BH across all tests. |
+| `jackstraw_rajive()` | Run the jackstraw permutation test to identify features significantly associated with estimated joint scores. Default multiple-testing correction is global BH; optional `correction = "BY"` gives conservative arbitrary-dependence control. Optional `pip = TRUE` adds posterior inclusion probabilities via `qvalue::lfdr()`. |
 | `print.jackstraw_rajive()` | Print a significance table for a `"jackstraw_rajive"` object. |
 | `summary.jackstraw_rajive()` | Return and print a `data.frame` summary of jackstraw results. |
 | `get_significant_vars()` | Extract significant variable names/indices for a given block and component from jackstraw results. |
@@ -660,10 +618,11 @@ see `StatisticalAudits.md` and the function references for full details.
 - **Random-direction null uses classical SVD.** The random-direction
   bound is generated from i.i.d. Gaussian draws, where the M-estimator
   only adds Monte-Carlo noise without removing bias. `rajiveplus`
-  therefore uses `base::svd()` inside `get_random_direction_bound_robustH()`,
-  matching the AJIVE reference implementation. The robust SVD is still
-  used for every other step in the pipeline (signal-block SVDs and the
-  joint / individual decompositions). See
+  therefore uses `base::svd()` inside
+  `get_random_direction_bound_robustH()`, matching the AJIVE reference
+  implementation. The robust SVD is still used for every other step in
+  the pipeline (signal-block SVDs and the joint / individual
+  decompositions). See
   `audits/2026-05-09-rajiveplus-vs-rajive-parity.md` for the rationale.
 - **Component scores are estimates**, not fixed design variables.
   Downstream tests via `associate_components()` and `jackstraw_rajive()`

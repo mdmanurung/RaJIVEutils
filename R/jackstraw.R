@@ -226,9 +226,9 @@ generate_null_f_stats <- function(X_t, joint_comp_scores, n_null) {
 #'   arbitrary dependency; use it when neighbouring features are strongly
 #'   correlated (e.g. genomic windows).  \code{"bonferroni"} controls the
 #'   family-wise error rate.
-#' @note The default correction was changed from \code{"BY"} back to \code{"BH"}
-#'   starting with version 0.3.0.  For strongly correlated omics blocks, switch
-#'   to \code{correction = "BY"} for FDR control under arbitrary dependency.
+#' @note The current development version defaults to \code{"BH"}.  For
+#'   strongly correlated omics blocks, switch to \code{correction = "BY"} for
+#'   FDR control under arbitrary dependency.
 #'
 #' @param pip Logical; if \code{TRUE}, compute posterior inclusion probabilities
 #'   (PIPs) for each feature via \code{qvalue::lfdr()}.  Requires the

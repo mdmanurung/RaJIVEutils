@@ -115,9 +115,9 @@ the association would hold against the true latent score
 (StatisticalAudits.md, Finding 8).
 }
 \note{
-The default correction was changed from \code{"BY"} back to \code{"BH"}
-  starting with version 0.3.0.  For strongly correlated omics blocks, switch
-  to \code{correction = "BY"} for FDR control under arbitrary dependency.
+The current development version defaults to \code{"BH"}.  For
+  strongly correlated omics blocks, switch to \code{correction = "BY"} for
+  FDR control under arbitrary dependency.
 }
 \examples{
 \donttest{

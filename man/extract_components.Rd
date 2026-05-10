@@ -31,8 +31,9 @@ extraction modes; currently unused.}
 
 \item{what}{Character scalar. What to extract.  One of \code{"scores"},
 \code{"loadings"}, \code{"variance"}, \code{"significance"}, or
-\code{"rank_diagnostics"}.  Only \code{"rank_diagnostics"} is currently
-fully implemented.}
+\code{"rank_diagnostics"}.  Variance extraction requires \code{blocks};
+significance extraction requires \code{jackstraw_result} or
+\code{source = "jackstraw"}.}
 
 \item{type}{Character. One of \code{"joint"} (default),
 \code{"individual"}, or \code{"both"}.  Selects which decomposition
@@ -71,31 +72,43 @@ For \code{what = "rank_diagnostics"} and \code{format = "wide"}: a
       \code{NULL}.}
     \item{\code{rand_dir_samples}}{Numeric vector of random-direction bound
       samples, or \code{NULL}.}
+    \item{\code{perm_samples}}{Numeric vector of permutation-bound samples,
+      or \code{NULL}.}
     \item{\code{wedin_cutoff}}{5th-percentile Wedin threshold or
       \code{NA_real_}.}
     \item{\code{rand_cutoff}}{95th-percentile random-direction threshold or
+      \code{NA_real_}.}
+    \item{\code{perm_cutoff}}{95th-percentile permutation threshold or
       \code{NA_real_}.}
     \item{\code{wedin_percentile}}{Percentile used for Wedin cutoff (5) or
       \code{NA_real_}.}
     \item{\code{rand_percentile}}{Percentile used for random cutoff (95) or
       \code{NA_real_}.}
+    \item{\code{perm_percentile}}{Percentile used for permutation cutoff
+      (95) or \code{NA_real_}.}
     \item{\code{identif_dropped}}{Integer vector of component indices
       dropped by the identifiability check (length 0 when none dropped).}
     \item{\code{cutoff_rule}}{One of \code{"max(wedin, random)"},
-      \code{"wedin_only"}, \code{"random_only"}, \code{"none_available"}.}
+      \code{"max(wedin, perm)"}, \code{"wedin_only"},
+      \code{"random_only"}, \code{"perm_only"}, or
+      \code{"none_available"}.}
     \item{\code{has_wedin}}{Logical.}
     \item{\code{has_random}}{Logical.}
+    \item{\code{has_perm}}{Logical.}
   }
-  For \code{format = "long"}: a \code{data.frame} with columns
-  \code{component_index}, \code{obs_sval}, \code{obs_sval_sq},
+  For \code{format = "long"} and rank diagnostics: a \code{data.frame} with
+  columns \code{component_index}, \code{obs_sval}, \code{obs_sval_sq},
   \code{classification}, \code{joint_rank_estimate},
-  \code{overall_sv_sq_threshold}, \code{wedin_cutoff}, \code{rand_cutoff}.
+  \code{overall_sv_sq_threshold}, \code{wedin_cutoff},
+  \code{rand_cutoff}, and \code{perm_cutoff}. Other extraction modes return
+  matrices, lists, or tidy \code{data.frame}s depending on \code{format}.
 }
 \description{
-Retrieves structured information from the output of \code{\link{Rajive}}.
-Currently supports \code{what = "rank_diagnostics"} which returns the joint
-rank selection diagnostics (observed singular values, Wedin/random-direction
-bound samples, cutoffs, and identifiability-dropped components).
+Retrieves structured information from the output of \code{\link{Rajive}}
+and, for significance summaries, from \code{\link{jackstraw_rajive}}.
+Supported \code{what} values are \code{"scores"}, \code{"loadings"},
+\code{"variance"}, \code{"significance"}, and
+\code{"rank_diagnostics"}.
 }
 \examples{
 \donttest{
