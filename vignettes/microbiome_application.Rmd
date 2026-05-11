@@ -478,7 +478,7 @@ message("    -> saved microbiome_rajive_results.rds")
 
 # ---- 5. Jackstraw -----------------------------------------------------------
 message("[5/6] Running jackstraw_rajive()...")
-js <- jackstraw_rajive(mb_fit, blocks = blocks, B = 100L)
+js <- jackstraw_rajive(mb_fit, blocks = blocks, n_null = 100L)
 saveRDS(js, file.path(out_dir, "microbiome_jackstraw_results.rds"))
 message("    -> saved microbiome_jackstraw_results.rds")
 

@@ -58,6 +58,9 @@ uses \code{\link[parallel]{mclapply}} on Unix and a
 temporarily set to \code{"L'Ecuyer-CMRG"} for reproducible parallel
 sampling (with a one-time warning); set
 \code{RNGkind("L'Ecuyer-CMRG")} explicitly to silence it.}
+
+\item{seed}{Integer or \code{NA}. Optional seed passed to \code{set.seed()}
+before fitting. Default \code{NA} leaves the caller's RNG state unchanged.}
 }
 \value{
 An object of class \code{"rajive"}: a named list containing
