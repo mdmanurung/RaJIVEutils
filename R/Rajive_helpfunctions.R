@@ -140,26 +140,35 @@ wedin_bound_resampling <- function(X, perp_basis, right_vectors, num_samples=100
     return(rep(0, num_samples))
   }
   numCores <- max(1L, as.integer(num_cores))
+  draw_dim <- c(ncol(perp_basis), rank)
+  if (numCores == 1L) {
+    draws <- array(stats::rnorm(prod(draw_dim) * num_samples),
+                   dim = c(draw_dim, num_samples))
+    return(as.numeric(wedin_bound_resampling_cpp_draws(
+      X = X,
+      perp_basis = perp_basis,
+      right_vectors = right_vectors,
+      draws = draws
+    )))
+  }
+
   seed <- sample.int(.Machine$integer.max, 1L)
   doParallel::registerDoParallel(numCores)
   on.exit(doParallel::stopImplicitCluster(), add = TRUE)
+  n_chunks <- min(numCores, num_samples)
+  chunks <- split(seq_len(num_samples),
+                  cut(seq_len(num_samples), breaks = n_chunks, labels = FALSE))
   resampled_norms <- .suppress_worker_build_warnings(
-    foreach::foreach (s=1:num_samples, .options.RNG = seed) %dorng% {
-    # Draw a Haar-uniform orthonormal frame in the orthogonal complement
-    # subspace by sampling in coordinate space then mapping via perp_basis.
-    z <- matrix(stats::rnorm(ncol(perp_basis) * rank), ncol(perp_basis), rank)
-    q <- qr.Q(qr(z))
-    perp_resampled <- perp_basis %*% q
-
-    if(right_vectors){
-      resampled_projection <- X %*% perp_resampled
-    } else{
-      resampled_projection <- t(perp_resampled) %*% X
-    }
-
-    # operator L2 norm
-    norm(resampled_projection,
-         type='2')
+    foreach::foreach(chunk = chunks, .combine = c, .options.RNG = seed,
+                     .export = "wedin_bound_resampling_cpp_draws") %dorng% {
+    draws <- array(stats::rnorm(prod(draw_dim) * length(chunk)),
+                   dim = c(draw_dim, length(chunk)))
+    wedin_bound_resampling_cpp_draws(
+      X = X,
+      perp_basis = perp_basis,
+      right_vectors = right_vectors,
+      draws = draws
+    )
   })
 
   as.numeric(resampled_norms)
@@ -194,9 +203,25 @@ get_random_direction_bound_robustH <- function(n_obs, dims, num_samples=1000,
 dims1 = as.list(dims)
 n_blocks <- length(dims)
 numCores <- max(1L, as.integer(num_cores))
+make_draws <- function(n) {
+  lapply(dims1, function(l) {
+    array(stats::rnorm(n_obs * l * n), dim = c(n_obs, l, n))
+  })
+}
+if (numCores == 1L) {
+  return(as.numeric(random_direction_bound_cpp_draws(
+    n_obs = n_obs,
+    dims = as.integer(dims),
+    draws_by_block = make_draws(num_samples)
+  )))
+}
+
 seed <- sample.int(.Machine$integer.max, 1L)
 doParallel::registerDoParallel(numCores)
 on.exit(doParallel::stopImplicitCluster(), add = TRUE)
+n_chunks <- min(numCores, num_samples)
+chunks <- split(seq_len(num_samples),
+                cut(seq_len(num_samples), breaks = n_chunks, labels = FALSE))
 
 # The null distribution is generated from clean Gaussian draws, so the
 # robust M-estimator adds noise without removing bias.  Use classical SVD
@@ -204,16 +229,14 @@ on.exit(doParallel::stopImplicitCluster(), add = TRUE)
 # is still used throughout the rest of the pipeline (signal-block SVDs,
 # joint and individual decompositions).
 rand_dir_samples <- .suppress_worker_build_warnings(
-  foreach::foreach (s=1:num_samples, .options.RNG = seed) %dorng% {
+  foreach::foreach(chunk = chunks, .combine = c, .options.RNG = seed,
+                   .export = "random_direction_bound_cpp_draws") %dorng% {
 
-  X <- lapply(dims1, function(l) matrix(rnorm(n_obs * l, mean=0,sd=1), n_obs, l))
-  rand_subspaces <- lapply(X, function(l) svd(l)[["u"]])
-
-  M <- do.call(cbind, rand_subspaces)
-  d1 <- svd(M, nu = 0L, nv = 0L)[["d"]][1L]
-
-  d1^2
-
+  random_direction_bound_cpp_draws(
+    n_obs = n_obs,
+    dims = as.integer(dims),
+    draws_by_block = make_draws(length(chunk))
+  )
 })
 
 as.numeric(rand_dir_samples)

@@ -1042,15 +1042,15 @@ plot_components(jackstraw_result = js, plot_type = "jackstraw_summary")
 
 ```{r}
 sig_b1c1 <- get_significant_vars(js, block = 1L, component = 1L)
-n_sig_b1c1 <- if (is.null(sig_b1c1)) 0L else nrow(sig_b1c1)
+n_sig_b1c1 <- if (is.data.frame(sig_b1c1)) nrow(sig_b1c1) else 0L
 cat("Significant features (block 1, component 1):", n_sig_b1c1, "\n")
-if (n_sig_b1c1 > 0L)
+if (isTRUE(n_sig_b1c1 > 0L))
   knitr::kable(head(sig_b1c1, 8), digits = 4)
 ```
 
 ```{r}
 sig_all <- summarize_significant_vars(js)
-if (!is.null(sig_all) && nrow(sig_all) > 0L) {
+if (is.data.frame(sig_all) && nrow(sig_all) > 0L) {
   knitr::kable(head(sig_all, 8), digits = 4,
                caption = "All significant features (all blocks x components)")
 } else {

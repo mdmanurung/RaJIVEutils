@@ -248,6 +248,9 @@
   }
 
   dots <- list(...)
+  dots$num_cores <- max(1L, as.integer(num_cores))
+  rank_only_refit <- all(keep %in% c("joint_rank", "indices"))
+  fit_fun <- if (rank_only_refit) .Rajive_rank_only else Rajive
   for (b in seq_len(B)) {
     idx <- .bootstrap_resample_indices(
       n = n_ref,
@@ -258,8 +261,8 @@
     )
     b_list <- lapply(blocks, function(x) x[idx, , drop = FALSE])
     fit_b <- tryCatch(
-      do.call(Rajive, c(list(b_list, initial_signal_ranks),
-                        dots)),
+      do.call(fit_fun, c(list(b_list, initial_signal_ranks),
+                         dots)),
       error = function(e) NULL
     )
 
@@ -344,6 +347,7 @@
   out <- .bootstrap_score_targets(ajive_output, targets, B, n_ref)
 
   dots <- list(...)
+  dots$num_cores <- max(1L, as.integer(num_cores))
   for (b in seq_len(B)) {
     idx <- .bootstrap_resample_indices(
       n = n_ref,

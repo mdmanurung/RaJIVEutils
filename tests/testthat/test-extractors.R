@@ -35,6 +35,20 @@ test_that(".extract_block_matrices computes residual from data minus components"
   expect_equal(lapply(resid, unname), lapply(fx$residual, unname))
 })
 
+test_that(".extract_block_matrices rejects stale component dimensions", {
+  fx <- make_extractor_fixture()
+  fx$fit$block_decomps[[2L]]$full <- fx$fit$block_decomps[[2L]]$full[, -1L, drop = FALSE]
+
+  expect_error(
+    rajiveplus:::.extract_block_matrices(fx$fit, fx$blocks, "joint"),
+    regexp = "dimensions do not match"
+  )
+  expect_error(
+    rajiveplus:::.extract_block_matrices(fx$fit, fx$blocks, "residual"),
+    regexp = "stale\\s+input\\s+blocks"
+  )
+})
+
 test_that(".extract_block_matrices validates matched samples", {
   fx <- make_extractor_fixture()
   rownames(fx$blocks[[2]]) <- rev(rownames(fx$blocks[[2]]))

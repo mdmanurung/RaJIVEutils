@@ -22,7 +22,7 @@ test_that("assess_stability components is permutation/sign invariant via Procrus
   blocks <- list(X1, X2)
 
   # Mock Rajive: returns swapped + sign-flipped components for bootstrap sample.
-  fake_rajive <- function(b_list, initial_signal_ranks) {
+  fake_rajive <- function(b_list, initial_signal_ranks, ...) {
     idx <- as.integer(round(b_list[[1]][, 1]))
     bs <- ref_scores[idx, c(2, 1), drop = FALSE]
     bs[, 1] <- -bs[, 1]
@@ -88,7 +88,7 @@ test_that("assess_stability returns rank_match_rate attribute", {
   blocks <- list(X1, X2)
 
   # Mock that always returns the correct rank.
-  fake_full_rank <- function(b_list, initial_signal_ranks) {
+  fake_full_rank <- function(b_list, initial_signal_ranks, ...) {
     idx <- as.integer(round(b_list[[1]][, 1]))
     bs  <- ref_scores[idx, , drop = FALSE]
     list(joint_scores = bs, joint_rank = 2)
@@ -111,7 +111,7 @@ test_that("assess_stability returns rank_match_rate attribute", {
 
   # Mock that randomly returns rank 1 instead of 2 (simulating rank wobble).
   b_counter <- 0L
-  fake_wobble <- function(b_list, initial_signal_ranks) {
+  fake_wobble <- function(b_list, initial_signal_ranks, ...) {
     idx       <- as.integer(round(b_list[[1]][, 1]))
     b_counter <<- b_counter + 1L
     rank_out  <- if (b_counter %% 2 == 0) 1L else 2L

@@ -108,21 +108,28 @@ test_that("Rajive full=TRUE: X = J + I + E for each block (K=3)", {
 
 
 # ===========================================================================
-# 3. full=FALSE: SVDs are present (note: 'full' arg is not propagated in
-#    get_final_decomposition_robustH, which always uses full=TRUE)
+# 3. full=FALSE: SVDs are present, full matrices are omitted.
 # ===========================================================================
 
-test_that("Rajive full=FALSE: joint/individual SVD components are present", {
+test_that("Rajive full=FALSE: joint/individual SVD components are present without full matrices", {
   d   <- make_blocks(K = 2, n = 30, pks = c(20, 15),
                      rankJ = 2, rankA = c(4, 3), seed = 3001L)
   res <- Rajive(d$blocks, d$initial_signal_ranks,
                 joint_rank = 2, full = FALSE, num_cores = 1L)
 
   for (k in seq_along(d$blocks)) {
-    expect_true(!is.null(bd_joint(res, k)$u),
+    joint <- bd_joint(res, k)
+    individual <- bd_individual(res, k)
+    expect_true(!is.null(joint$u),
                 label = paste0("joint u present for block ", k))
-    expect_true(!is.null(bd_individual(res, k)$u),
+    expect_true(!is.null(individual$u),
                 label = paste0("individual u present for block ", k))
+    expect_true(is.na(joint$full),
+                label = paste0("joint full omitted for block ", k))
+    expect_true(is.na(individual$full),
+                label = paste0("individual full omitted for block ", k))
+    expect_true(is.na(bd_noise(res, k)),
+                label = paste0("noise omitted for block ", k))
   }
 })
 
@@ -257,4 +264,3 @@ test_that("get_block_scores returns matrix of correct dimensions", {
                  label = paste0("joint scores ncol, block ", k))
   }
 })
-

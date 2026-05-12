@@ -49,6 +49,31 @@
   invisible(mats)
 }
 
+.dim_label <- function(x) {
+  paste(dim(x), collapse = " x ")
+}
+
+.validate_component_dims <- function(mats, blocks, component, block_names) {
+  if (is.null(blocks)) {
+    return(invisible(mats))
+  }
+
+  bad <- which(!mapply(function(x, y) identical(dim(x), dim(y)), mats, blocks))
+  if (length(bad) > 0L) {
+    k <- bad[[1L]]
+    block_label <- block_names[[k]]
+    block_dim <- .dim_label(blocks[[k]])
+    component_dim <- .dim_label(mats[[k]])
+    cli::cli_abort(c(
+      "Extracted {.val {component}} matrix dimensions do not match `blocks`.",
+      "i" = "Block {.val {block_label}}: `blocks` has dimensions {block_dim}, but the fitted component has dimensions {component_dim}.",
+      "i" = "This usually means the fitted object was created from different or stale input blocks."
+    ))
+  }
+
+  invisible(mats)
+}
+
 .reconstruct_decomp_matrix <- function(decomp) {
   full <- decomp[["full"]]
   if (is.matrix(full) && length(full) > 1L && !all(is.na(full))) {
@@ -103,11 +128,15 @@
     cli::cli_abort("`ajive_output$block_decomps` must contain 3 entries per block.")
   }
   K <- as.integer(K)
+  if (!is.null(blocks) && length(blocks) != K) {
+    cli::cli_abort("`blocks` must contain the same number of blocks as `ajive_output`.")
+  }
   block_names <- .default_block_names(blocks, K)
 
   if (component %in% c("joint", "individual")) {
     out <- lapply(seq_len(K), function(k) .extract_one_component(ajive_output, k, component))
     names(out) <- block_names
+    .validate_component_dims(out, blocks, component, block_names)
     return(out)
   }
 

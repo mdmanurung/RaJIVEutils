@@ -149,6 +149,185 @@ test_that(".rajive_bootstrap is deterministic under set.seed", {
   expect_equal(a, b)
 })
 
+test_that(".rajive_bootstrap rank-only payload matches full refit ranks and indices", {
+  fx <- make_small_rajive_fixture()
+  cluster <- rep(letters[1:4], each = 3L)
+
+  set.seed(51)
+  rank_only <- rajiveplus:::.rajive_bootstrap(
+    fx$fit, fx$blocks, fx$initial_signal_ranks,
+    B = 3L,
+    keep = c("joint_rank", "indices"),
+    cluster = cluster,
+    resample = "cluster",
+    n_wedin_samples = NA,
+    n_rand_dir_samples = NA,
+    joint_rank = 1L
+  )
+
+  set.seed(51)
+  full <- rajiveplus:::.rajive_bootstrap(
+    fx$fit, fx$blocks, fx$initial_signal_ranks,
+    B = 3L,
+    keep = c("joint_rank", "indices", "scores"),
+    cluster = cluster,
+    resample = "cluster",
+    n_wedin_samples = NA,
+    n_rand_dir_samples = NA,
+    joint_rank = 1L
+  )
+
+  expect_equal(rank_only$joint_rank, full$joint_rank)
+  expect_equal(rank_only$indices, full$indices)
+})
+
+test_that("bootstrap refits use num_cores for outer replicates and serial inner Rajive calls", {
+  n <- 8L
+  blocks <- list(
+    cbind(seq_len(n), matrix(rnorm(n * 2L), n, 2L)),
+    cbind(seq_len(n), matrix(rnorm(n * 2L), n, 2L))
+  )
+
+  seen_single <- integer()
+  fake_rank <- function(b_list, initial_signal_ranks, num_cores = 1L, ...) {
+    seen_single <<- c(seen_single, as.integer(num_cores))
+    structure(list(joint_rank = 1L), class = "rajive_rank_only")
+  }
+
+  set.seed(7)
+  testthat::with_mocked_bindings(
+    rajiveplus:::.rajive_bootstrap(
+      ajive_output = NULL,
+      blocks = blocks,
+      initial_signal_ranks = c(1L, 1L),
+      B = 2L,
+      keep = "joint_rank",
+      num_cores = 5L
+    ),
+    .Rajive_rank_only = fake_rank
+  )
+  expect_equal(seen_single, c(1L, 1L))
+
+  ref_scores <- matrix(seq_len(n), ncol = 1L)
+  ajive_output <- structure(list(joint_scores = ref_scores), class = "rajive")
+  targets <- data.frame(
+    source = "joint",
+    block = NA_integer_,
+    key = "joint",
+    stringsAsFactors = FALSE
+  )
+
+  seen_multi <- integer()
+  fake_scores <- function(b_list, initial_signal_ranks, num_cores = 1L, ...) {
+    seen_multi <<- c(seen_multi, as.integer(num_cores))
+    list(joint_scores = matrix(b_list[[1L]][, 1L], ncol = 1L), joint_rank = 1L)
+  }
+
+  set.seed(8)
+  testthat::with_mocked_bindings(
+    rajiveplus:::.rajive_bootstrap_scores_multi(
+      ajive_output = ajive_output,
+      blocks = blocks,
+      initial_signal_ranks = c(1L, 1L),
+      targets = targets,
+      B = 2L,
+      num_cores = 6L
+    ),
+    Rajive = fake_scores
+  )
+  expect_equal(seen_multi, c(1L, 1L))
+})
+
+test_that("bootstrap refits are parallelized at replicate level when num_cores > 1", {
+  n <- 8L
+  blocks <- list(
+    cbind(seq_len(n), matrix(rnorm(n * 2L), n, 2L)),
+    cbind(seq_len(n), matrix(rnorm(n * 2L), n, 2L))
+  )
+
+  seen_parallel <- FALSE
+  seen_inner_cores <- integer()
+  fake_parallel <- function(X, FUN, num_cores = 1L, ...) {
+    seen_parallel <<- TRUE
+    expect_equal(num_cores, 2L)
+    lapply(X, FUN, ...)
+  }
+  fake_rank_only <- function(b_list, initial_signal_ranks, num_cores = 1L, ...) {
+    seen_inner_cores <<- c(seen_inner_cores, as.integer(num_cores))
+    structure(list(joint_rank = 1L), class = "rajive_rank_only")
+  }
+
+  set.seed(71)
+  testthat::with_mocked_bindings(
+    rajiveplus:::.rajive_bootstrap(
+      ajive_output = NULL,
+      blocks = blocks,
+      initial_signal_ranks = c(1L, 1L),
+      B = 3L,
+      keep = "joint_rank",
+      num_cores = 2L
+    ),
+    .rajive_parallel_lapply = fake_parallel,
+    .Rajive_rank_only = fake_rank_only
+  )
+
+  expect_true(seen_parallel)
+  expect_equal(seen_inner_cores, rep(1L, 3L))
+})
+
+test_that(".rajive_bootstrap uses rank-only refits only for rank-only payloads", {
+  n <- 8L
+  blocks <- list(
+    cbind(seq_len(n), matrix(rnorm(n * 2L), n, 2L)),
+    cbind(seq_len(n), matrix(rnorm(n * 2L), n, 2L))
+  )
+  ref_scores <- matrix(seq_len(n), ncol = 1L)
+  ajive_output <- structure(list(joint_scores = ref_scores), class = "rajive")
+
+  full_calls <- 0L
+  rank_only_calls <- 0L
+  fake_full <- function(b_list, initial_signal_ranks, ...) {
+    full_calls <<- full_calls + 1L
+    list(joint_scores = matrix(b_list[[1L]][, 1L], ncol = 1L), joint_rank = 1L)
+  }
+  fake_rank_only <- function(b_list, initial_signal_ranks, ...) {
+    rank_only_calls <<- rank_only_calls + 1L
+    structure(list(joint_scores = matrix(b_list[[1L]][, 1L], ncol = 1L),
+                   joint_rank = 1L),
+              class = "rajive_rank_only")
+  }
+
+  set.seed(9)
+  testthat::with_mocked_bindings(
+    rajiveplus:::.rajive_bootstrap(
+      ajive_output = NULL,
+      blocks = blocks,
+      initial_signal_ranks = c(1L, 1L),
+      B = 2L,
+      keep = c("joint_rank", "indices")
+    ),
+    Rajive = fake_full,
+    .Rajive_rank_only = fake_rank_only
+  )
+  expect_equal(rank_only_calls, 2L)
+  expect_equal(full_calls, 0L)
+
+  set.seed(10)
+  testthat::with_mocked_bindings(
+    rajiveplus:::.rajive_bootstrap(
+      ajive_output = ajive_output,
+      blocks = blocks,
+      initial_signal_ranks = c(1L, 1L),
+      B = 2L,
+      keep = "scores"
+    ),
+    Rajive = fake_full,
+    .Rajive_rank_only = fake_rank_only
+  )
+  expect_equal(rank_only_calls, 2L)
+  expect_equal(full_calls, 2L)
+})
+
 test_that("assess_stability joint_rank works without fitted reference components", {
   fx <- make_small_rajive_fixture()
 

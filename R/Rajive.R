@@ -172,6 +172,47 @@ Rajive <- function(blocks, initial_signal_ranks, full=TRUE,
                            num_cores=1L,
                            seed=NA_integer_)
 {
+  .Rajive_core(
+    blocks = blocks,
+    initial_signal_ranks = initial_signal_ranks,
+    full = full,
+    n_wedin_samples = n_wedin_samples,
+    n_rand_dir_samples = n_rand_dir_samples,
+    joint_rank = joint_rank,
+    n_perm_samples = n_perm_samples,
+    num_cores = num_cores,
+    seed = seed,
+    rank_only = FALSE
+  )
+}
+
+.Rajive_rank_only <- function(blocks, initial_signal_ranks,
+                              n_wedin_samples=1000, n_rand_dir_samples=1000,
+                              joint_rank=NA,
+                              n_perm_samples=NA,
+                              num_cores=1L,
+                              seed=NA_integer_) {
+  .Rajive_core(
+    blocks = blocks,
+    initial_signal_ranks = initial_signal_ranks,
+    full = FALSE,
+    n_wedin_samples = n_wedin_samples,
+    n_rand_dir_samples = n_rand_dir_samples,
+    joint_rank = joint_rank,
+    n_perm_samples = n_perm_samples,
+    num_cores = num_cores,
+    seed = seed,
+    rank_only = TRUE
+  )
+}
+
+.Rajive_core <- function(blocks, initial_signal_ranks, full=TRUE,
+                         n_wedin_samples=1000, n_rand_dir_samples=1000,
+                         joint_rank=NA,
+                         n_perm_samples=NA,
+                         num_cores=1L,
+                         seed=NA_integer_,
+                         rank_only=FALSE) {
 
   num_cores <- max(1L, as.integer(num_cores))
   if (!is.na(seed)) set.seed(as.integer(seed))
@@ -287,6 +328,15 @@ Rajive <- function(blocks, initial_signal_ranks, full=TRUE,
 
   joint_rank <- dim(joint_scores)[2]
 
+  if (isTRUE(rank_only)) {
+    rank_decomposition <- list(
+      joint_scores = joint_scores,
+      joint_rank = joint_rank,
+      joint_rank_sel = joint_rank_sel_results
+    )
+    class(rank_decomposition) <- "rajive_rank_only"
+    return(rank_decomposition)
+  }
 
   # step 3: final decomposition -----------------------------------------------------
 

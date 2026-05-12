@@ -26,6 +26,35 @@ test_that("get_random_direction_bound_robustH is reproducible under L'Ecuyer", {
   expect_equal(a, b)
 })
 
+test_that("wedin_bound_resampling is reproducible under L'Ecuyer", {
+  skip_on_cran()
+
+  set.seed(2027)
+  X <- matrix(rnorm(30 * 12), 30, 12)
+  perp_basis <- qr.Q(qr(matrix(rnorm(30 * 4), 30, 4)))
+
+  a <- with_lecuyer_seed(2027, {
+    rajiveplus:::wedin_bound_resampling(
+      X = X,
+      perp_basis = perp_basis,
+      right_vectors = FALSE,
+      num_samples = 30,
+      num_cores = 2
+    )
+  })
+  b <- with_lecuyer_seed(2027, {
+    rajiveplus:::wedin_bound_resampling(
+      X = X,
+      perp_basis = perp_basis,
+      right_vectors = FALSE,
+      num_samples = 30,
+      num_cores = 2
+    )
+  })
+
+  expect_equal(a, b)
+})
+
 test_that("get_perm_bound_robustH is reproducible under L'Ecuyer", {
   skip_on_cran()
 

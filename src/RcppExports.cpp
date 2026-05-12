@@ -11,6 +11,33 @@ Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
 Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
 #endif
 
+// wedin_bound_resampling_cpp_draws
+arma::vec wedin_bound_resampling_cpp_draws(const arma::mat& X, const arma::mat& perp_basis, bool right_vectors, const arma::cube& draws);
+RcppExport SEXP _rajiveplus_wedin_bound_resampling_cpp_draws(SEXP XSEXP, SEXP perp_basisSEXP, SEXP right_vectorsSEXP, SEXP drawsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< const arma::mat& >::type X(XSEXP);
+    Rcpp::traits::input_parameter< const arma::mat& >::type perp_basis(perp_basisSEXP);
+    Rcpp::traits::input_parameter< bool >::type right_vectors(right_vectorsSEXP);
+    Rcpp::traits::input_parameter< const arma::cube& >::type draws(drawsSEXP);
+    rcpp_result_gen = Rcpp::wrap(wedin_bound_resampling_cpp_draws(X, perp_basis, right_vectors, draws));
+    return rcpp_result_gen;
+END_RCPP
+}
+// random_direction_bound_cpp_draws
+arma::vec random_direction_bound_cpp_draws(int n_obs, const arma::ivec& dims, const Rcpp::List& draws_by_block);
+RcppExport SEXP _rajiveplus_random_direction_bound_cpp_draws(SEXP n_obsSEXP, SEXP dimsSEXP, SEXP draws_by_blockSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type n_obs(n_obsSEXP);
+    Rcpp::traits::input_parameter< const arma::ivec& >::type dims(dimsSEXP);
+    Rcpp::traits::input_parameter< const Rcpp::List& >::type draws_by_block(draws_by_blockSEXP);
+    rcpp_result_gen = Rcpp::wrap(random_direction_bound_cpp_draws(n_obs, dims, draws_by_block));
+    return rcpp_result_gen;
+END_RCPP
+}
 // RobRSVD1_cpp
 List RobRSVD1_cpp(const arma::mat& data, double sinit, const arma::vec& uinit, const arma::vec& vinit, double huberk, int niter, double tol);
 RcppExport SEXP _rajiveplus_RobRSVD1_cpp(SEXP dataSEXP, SEXP sinitSEXP, SEXP uinitSEXP, SEXP vinitSEXP, SEXP huberkSEXP, SEXP niterSEXP, SEXP tolSEXP) {
@@ -48,6 +75,8 @@ END_RCPP
 }
 
 static const R_CallMethodDef CallEntries[] = {
+    {"_rajiveplus_wedin_bound_resampling_cpp_draws", (DL_FUNC) &_rajiveplus_wedin_bound_resampling_cpp_draws, 4},
+    {"_rajiveplus_random_direction_bound_cpp_draws", (DL_FUNC) &_rajiveplus_random_direction_bound_cpp_draws, 3},
     {"_rajiveplus_RobRSVD1_cpp", (DL_FUNC) &_rajiveplus_RobRSVD1_cpp, 7},
     {"_rajiveplus_RobRSVD_all_cpp", (DL_FUNC) &_rajiveplus_RobRSVD_all_cpp, 8},
     {NULL, NULL, 0}
