@@ -589,6 +589,23 @@ test_that("J1: extract_components supports scores/loadings/significance/variance
   expect_true(all(c("p_value", "significant") %in% names(sig)))
 })
 
+test_that("J1b: plot_components supports loading confidence intervals", {
+  fx <- make_small_rajive_fixture(seed = 8101L)
+  set.seed(8102L)
+  ci <- rajive_ci(
+    fx$fit, fx$blocks, fx$initial_signal_ranks,
+    target = "loadings",
+    method = "percentile",
+    B = 3L,
+    n_wedin_samples = NA,
+    n_rand_dir_samples = NA,
+    joint_rank = 1L
+  )
+
+  p <- plot_components(fx$fit, plot_type = "loading_ci", ci = ci, top_n = 5L)
+  expect_true(inherits(p, "ggplot"))
+})
+
 test_that("J2: plot_components supports non-diagnostic plot types", {
   Y <- ajive.data.sim(K = 2, rankJ = 2, rankA = c(4, 3),
                       n = 40L, pks = c(30L, 20L), dist.type = 1)
@@ -681,6 +698,23 @@ test_that("K1: autoplot.rajive returns ggplot for pairs/density/top_features", {
   expect_true(inherits(ggplot2::autoplot(.viz_fit, plot_type = "top_features"), "ggplot"))
 })
 
+test_that("K1b: autoplot.rajive supports loading confidence intervals", {
+  fx <- make_small_rajive_fixture(seed = 8201L)
+  set.seed(8202L)
+  ci <- rajive_ci(
+    fx$fit, fx$blocks, fx$initial_signal_ranks,
+    target = "loadings",
+    method = "percentile",
+    B = 3L,
+    n_wedin_samples = NA,
+    n_rand_dir_samples = NA,
+    joint_rank = 1L
+  )
+
+  expect_true(inherits(ggplot2::autoplot(fx$fit, plot_type = "loading_ci",
+                                         ci = ci, top_n = 5L), "ggplot"))
+})
+
 test_that("K2: autoplot.rajive supports diagnostic plot_types", {
   expect_true(inherits(ggplot2::autoplot(.viz_fit, plot_type = "rank_threshold"),      "ggplot"))
   expect_true(inherits(ggplot2::autoplot(.viz_fit, plot_type = "bound_distributions"), "ggplot"))
@@ -718,4 +752,3 @@ test_that("K7: fortify.jackstraw_rajive returns significance data.frame", {
 test_that("K8: autoplot errors informatively for wrong object class", {
   expect_error(autoplot.rajive(list()), regexp = "class")
 })
-

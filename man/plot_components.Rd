@@ -12,8 +12,8 @@ plot_components(
   assoc_results = NULL,
   stability_result = NULL,
   plot_type = c("pairs", "density", "top_features", "component_heatmap", "variance",
-    "association", "volcano", "jackstraw_summary", "stability", "ajive_diagnostic",
-    "rank_threshold", "bound_distributions"),
+    "loading_ci", "association", "volcano", "jackstraw_summary", "stability",
+    "ajive_diagnostic", "rank_threshold", "bound_distributions"),
   type = c("joint", "individual", "both"),
   block = NULL,
   component = NULL,
@@ -81,6 +81,8 @@ plot types (default \code{20L}).}
   \item{\code{cutoff_quantile}}{Numeric in (0, 1). Override the
     percentile cutoff for bound-distribution plots (default: use the
     cutoffs stored in the diagnostics payload).}
+  \item{\code{ci}}{Output from \code{\link{rajive_ci}}; required for
+    \code{plot_type = "loading_ci"}.}
 }}
 }
 \value{
@@ -106,6 +108,8 @@ Supported plot types include:
   \item{\code{"pairs"}, \code{"density"}}{Score scatter or density plots.}
   \item{\code{"top_features"}, \code{"component_heatmap"}}{Feature-loading
     summaries from the decomposition.}
+  \item{\code{"loading_ci"}}{Top loading estimates with bootstrap confidence
+    intervals from \code{\link{rajive_ci}}.}
   \item{\code{"variance"}}{Variance explained across blocks; requires
     \code{blocks}.}
   \item{\code{"association"}}{Association-result summary plots.}

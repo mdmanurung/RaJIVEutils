@@ -1,0 +1,147 @@
+---
+title: "Bootstrap Inference on Simulated RaJIVE Data"
+author: "rajiveplus package authors"
+date: "`r Sys.Date()`"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Bootstrap Inference on Simulated RaJIVE Data}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4.5,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+This vignette is a compact end-to-end check of the inference helpers added on
+top of `Rajive()`. It uses simulated data and intentionally small bootstrap
+counts so it can run during package tests. Increase `B` for real analyses.
+
+```{r setup}
+library(rajiveplus)
+```
+
+## Simulate and Fit
+
+```{r simulate-fit}
+set.seed(101)
+n <- 64L
+pks <- c(10L, 8L)
+sim <- ajive.data.sim(K = 2, rankJ = 1L, rankA = c(1L, 1L),
+                      n = n, pks = pks, dist.type = 1)
+blocks <- sim$sim_data
+names(blocks) <- c("rna", "protein")
+for (k in seq_along(blocks)) {
+  rownames(blocks[[k]]) <- paste0("sample", seq_len(n))
+  colnames(blocks[[k]]) <- paste0(names(blocks)[[k]], "_", seq_len(ncol(blocks[[k]])))
+}
+
+fit <- Rajive(blocks, initial_signal_ranks = c(2L, 2L),
+              joint_rank = 1L,
+              n_wedin_samples = NA,
+              n_rand_dir_samples = NA)
+
+stopifnot(inherits(fit, "rajive"))
+stopifnot(fit$joint_rank == 1L)
+```
+
+## Feature-Level Variance Partition
+
+`joint_variance_partition()` reports how much of each feature's sum of squares
+is attributed to joint, individual, and residual structure. The residual is
+computed from the original data minus reconstructed joint and individual
+matrices, so the original `blocks` are required.
+
+```{r variance-partition}
+vp <- joint_variance_partition(fit, blocks)
+head(vp)
+
+stopifnot(all(c("joint_prop", "individual_prop", "residual_prop") %in% names(vp)))
+stopifnot(all(is.finite(vp$joint_prop)))
+```
+
+## Loading Confidence Intervals
+
+Bootstrap loading intervals are aligned to the full-data loading matrix before
+summarisation. These are entry-wise intervals; loading directions and subspaces
+remain the statistically safer interpretation when components are near-tied.
+
+```{r loading-ci}
+set.seed(102)
+ci_load <- rajive_ci(fit, blocks, c(2L, 2L),
+                     target = "loadings",
+                     method = "percentile",
+                     B = 20L,
+                     joint_rank = 1L,
+                     n_wedin_samples = NA,
+                     n_rand_dir_samples = NA)
+
+load_tbl <- extract_components(fit, what = "loadings",
+                               format = "long", ci = ci_load)
+head(load_tbl)
+
+stopifnot(all(c("lower", "upper", "ci_method") %in% names(load_tbl)))
+```
+
+```{r loading-ci-plot}
+plot_components(fit, plot_type = "loading_ci", ci = ci_load, top_n = 25L)
+```
+
+## BCa Rank Interval
+
+BCa intervals use delete-one observation jackknife acceleration, or delete-one
+cluster acceleration when `cluster` is supplied. This is more expensive than
+percentile intervals because it refits `Rajive()` for every jackknife deletion.
+
+```{r rank-bca}
+set.seed(103)
+ci_rank <- rajive_ci(fit, blocks, c(2L, 2L),
+                     target = "joint_rank",
+                     method = "bca",
+                     B = 20L,
+                     joint_rank = 1L,
+                     n_wedin_samples = NA,
+                     n_rand_dir_samples = NA)
+ci_rank
+
+stopifnot(ci_rank$method == "bca")
+stopifnot(is.finite(ci_rank$lower), is.finite(ci_rank$upper))
+```
+
+## Score-Uncertainty Propagation
+
+`associate_components()` still returns the point-estimate association p-value.
+With `propagate_uncertainty = "bootstrap"`, it also reports the fraction of
+bootstrap score refits that remain significant, a bootstrap effect-size interval,
+and the median bootstrap p-value.
+
+```{r association-propagation}
+set.seed(104)
+metadata <- data.frame(marker = fit$joint_scores[, 1L] + rnorm(n, sd = 0.05))
+
+assoc <- associate_components(
+  fit, metadata,
+  variable = "marker",
+  mode = "continuous",
+  propagate_uncertainty = "bootstrap",
+  blocks = blocks,
+  initial_signal_ranks = c(2L, 2L),
+  B = 20L,
+  joint_rank = 2L,
+  n_wedin_samples = NA,
+  n_rand_dir_samples = NA
+)
+assoc
+
+stopifnot(all(c("stability", "effect_lo", "effect_hi", "p_median") %in% names(assoc)))
+```

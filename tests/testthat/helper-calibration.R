@@ -100,6 +100,87 @@ haar_perp_sample <- function(perp_basis, r) {
 }
 
 # ---------------------------------------------------------------------------
+# null_blocks_clustered
+# ---------------------------------------------------------------------------
+
+#' Build K Gaussian null blocks with a shared cluster random effect.
+#'
+#' Each row belongs to one of `n_clusters` clusters; rows in the same cluster
+#' share a per-feature offset drawn N(0, cluster_sd^2).  Used to validate
+#' cluster bootstrap: naive observation-level bootstrap gives anti-conservative
+#' CIs on these data because effective sample size is N_clusters, not n_obs.
+#'
+#' @param K Integer. Number of blocks.
+#' @param n_clusters Integer. Number of distinct clusters (subjects/donors).
+#' @param obs_per_cluster Integer scalar or length-`n_clusters` vector. Number
+#'   of observations per cluster.
+#' @param pks Integer vector of length K. Features per block.
+#' @param cluster_sd Numeric. SD of the cluster-level random effect.
+#' @param seed Integer. RNG seed.
+#'
+#' @return List with:
+#'   \describe{
+#'     \item{`blocks`}{Named list of length K of `n x pks[k]` matrices.}
+#'     \item{`cluster`}{Integer vector of length n; cluster ID for each row.}
+#'   }
+null_blocks_clustered <- function(K, n_clusters, obs_per_cluster, pks,
+                                  cluster_sd = 0.5, seed = 42L) {
+  set.seed(seed)
+  if (length(obs_per_cluster) == 1L) {
+    obs_per_cluster <- rep(as.integer(obs_per_cluster), n_clusters)
+  }
+  stopifnot(length(obs_per_cluster) == n_clusters)
+  cluster <- rep(seq_len(n_clusters), times = obs_per_cluster)
+  n <- length(cluster)
+  blocks <- lapply(seq_len(K), function(k) {
+    offsets <- matrix(stats::rnorm(n_clusters * pks[k], sd = cluster_sd),
+                      n_clusters, pks[k])
+    noise <- matrix(stats::rnorm(n * pks[k]), n, pks[k])
+    offsets[cluster, , drop = FALSE] + noise
+  })
+  names(blocks) <- paste0("block", seq_len(K))
+  list(blocks = blocks, cluster = cluster)
+}
+
+# ---------------------------------------------------------------------------
+# signal_blocks_clustered
+# ---------------------------------------------------------------------------
+
+#' Build blocks with known joint+individual structure PLUS a cluster effect.
+#'
+#' Constructs blocks via `ajive.data.sim()`, then adds a per-feature random
+#' offset shared by all observations of the same cluster.  The joint structure
+#' identifies a true joint signal; the cluster effect creates the within-row
+#' correlation that motivates cluster bootstrap.
+#'
+#' @inheritParams null_blocks_clustered
+#' @param rankJ Integer. True joint rank.
+#' @param rankA Integer vector. True individual ranks per block.
+#'
+#' @return List with `blocks` and `cluster` (same shape as
+#'   [`null_blocks_clustered`]).
+signal_blocks_clustered <- function(K, n_clusters, obs_per_cluster, pks,
+                                    rankJ, rankA,
+                                    cluster_sd = 0.5, seed = 42L) {
+  set.seed(seed)
+  if (length(obs_per_cluster) == 1L) {
+    obs_per_cluster <- rep(as.integer(obs_per_cluster), n_clusters)
+  }
+  stopifnot(length(obs_per_cluster) == n_clusters)
+  cluster <- rep(seq_len(n_clusters), times = obs_per_cluster)
+  n <- length(cluster)
+  Y <- ajive.data.sim(K = K, rankJ = rankJ, rankA = rankA, n = n, pks = pks,
+                      dist.type = 1)
+  blocks <- lapply(seq_len(K), function(k) {
+    offsets <- matrix(stats::rnorm(n_clusters * pks[k], sd = cluster_sd),
+                      n_clusters, pks[k])
+    Y$sim_data[[k]] + offsets[cluster, , drop = FALSE]
+  })
+  names(blocks) <- paste0("block", seq_len(K))
+  list(blocks = blocks, cluster = cluster)
+}
+
+# ---------------------------------------------------------------------------
 # binom_ci
 # ---------------------------------------------------------------------------
 

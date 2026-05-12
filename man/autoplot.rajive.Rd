@@ -8,8 +8,8 @@
 \method{autoplot}{rajive}(
   object,
   plot_type = c("pairs", "density", "top_features", "component_heatmap", "variance",
-    "association", "volcano", "jackstraw_summary", "stability", "ajive_diagnostic",
-    "rank_threshold", "bound_distributions"),
+    "loading_ci", "association", "volcano", "jackstraw_summary", "stability",
+    "ajive_diagnostic", "rank_threshold", "bound_distributions"),
   ...
 )
 

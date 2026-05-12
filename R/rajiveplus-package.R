@@ -19,13 +19,16 @@
 #'   \item{Feature interpretation}{\code{\link{jackstraw_rajive}},
 #'     \code{\link{rank_features}}, \code{\link{get_significant_vars}},
 #'     posterior inclusion probabilities, and jackstraw plots.}
-#'   \item{Metadata and stability helpers}{\code{\link{associate_components}},
-#'     \code{\link{assess_stability}}, \code{\link{summarize_components}},
-#'     \code{\link{export_results}}, and \code{\link{rajive_report}}.}
+#'   \item{Inference and metadata helpers}{\code{\link{rajive_ci}},
+#'     \code{\link{joint_variance_partition}},
+#'     \code{\link{associate_components}}, \code{\link{assess_stability}},
+#'     \code{\link{summarize_components}}, \code{\link{export_results}},
+#'     and \code{\link{rajive_report}}.}
 #' }
 #'
 #' See \code{browseVignettes("rajiveplus")} for worked examples.
 #'
 #' @useDynLib rajiveplus, .registration = TRUE
 #' @importFrom Rcpp evalCpp
+#' @importFrom utils capture.output head str
 "_PACKAGE"

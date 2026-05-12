@@ -22,6 +22,16 @@ associate_components(
   type = c("joint", "individual"),
   block = NULL,
   component = NULL,
+  propagate_uncertainty = c("none", "bootstrap"),
+  B = 200L,
+  level = 0.95,
+  alpha_stability = 0.05,
+  cluster = NULL,
+  strata = NULL,
+  replicates = NULL,
+  blocks = NULL,
+  initial_signal_ranks = NULL,
+  num_cores = 1L,
   ...
 )
 
@@ -103,12 +113,43 @@ or \code{"individual"}.}
 \item{component}{Integer or \code{NULL}.  Restrict analysis to a single
 component index.}
 
+\item{propagate_uncertainty}{Character scalar. \code{"none"} preserves the
+historical fixed-score analysis; \code{"bootstrap"} adds score-refit
+uncertainty summaries.}
+
+\item{B}{Positive integer. Number of bootstrap refits when replicates are
+not supplied.}
+
+\item{level}{Numeric confidence level for bootstrap effect-size quantiles.}
+
+\item{alpha_stability}{Numeric p-value threshold used to compute the
+bootstrap stability fraction.}
+
+\item{cluster}{Optional cluster identifier per sample for cluster bootstrap.}
+
+\item{strata}{Optional stratum identifier per sample for stratified cluster
+bootstrap.}
+
+\item{replicates}{Optional bootstrap output containing a 3D \code{scores}
+array, typically from the internal bootstrap engine.}
+
+\item{blocks}{List of original block matrices. Required for automatic
+bootstrap propagation when \code{replicates = NULL}.}
+
+\item{initial_signal_ranks}{Integer vector used for bootstrap refits when
+\code{replicates = NULL}.}
+
+\item{num_cores}{Positive integer. Reserved for bootstrap execution.}
+
 \item{...}{Reserved for future arguments.}
 }
 \value{
 A \code{data.frame} with one row per variable x component
   combination and columns \code{variable}, \code{component}, \code{stat},
-  \code{p_value}, \code{p_adj}, and \code{method}.
+  \code{p_value}, \code{p_adj}, and \code{method}.  With
+  \code{propagate_uncertainty = "bootstrap"}, columns \code{stability},
+  \code{effect_lo}, \code{effect_hi}, \code{p_median}, and
+  \code{p_adj_median} are appended.
 }
 \description{
 Tests for associations between estimated joint (or individual) component
@@ -121,9 +162,10 @@ variables.
 \strong{Score estimation error:}
 Component scores are estimated quantities, not fixed design variables.
 Estimation error attenuates effect sizes and inflates Type-I error in naive
-tests. P-values returned by this function do \strong{not} propagate score
-estimation uncertainty.  Treat results as post-decomposition exploratory
-associations, not exact fixed-design inference.
+tests. By default, p-values returned by this function do \strong{not}
+propagate score estimation uncertainty.  Use
+\code{propagate_uncertainty = "bootstrap"} to add bootstrap stability,
+effect-quantile, and median-p-value summaries.
 
 \strong{Survival split bias:}
 When \code{mode = "survival"} and a score-split (\code{split = "median"}

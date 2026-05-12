@@ -13,6 +13,7 @@ extract_components(
   block = NULL,
   component = NULL,
   jackstraw_result = NULL,
+  ci = NULL,
   format = c("wide", "long"),
   include_meta = FALSE,
   ...
@@ -49,6 +50,10 @@ returns results for all blocks.}
 \item{jackstraw_result}{An optional object of class
 \code{"jackstraw_rajive"} (output of \code{\link{jackstraw_rajive}}).
 Required when \code{source = "jackstraw"}.}
+
+\item{ci}{Optional \code{data.frame} returned by \code{\link{rajive_ci}}.
+When supplied with \code{format = "long"}, matching interval columns are
+appended for supported extraction modes.}
 
 \item{format}{Character. \code{"wide"} (default) returns a named list of
 class \code{c("rajive_diagnostics", "list")}; \code{"long"} returns a

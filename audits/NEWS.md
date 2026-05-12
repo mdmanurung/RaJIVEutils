@@ -21,6 +21,32 @@
 
 ## New features
 
+- Added bootstrap inference helpers for the v0.2.0 roadmap:
+  `rajive_ci()` computes percentile/basic/BCa intervals for joint loadings,
+  variance explained, and joint rank, while rejecting BCa for sample-specific
+  scores where the delete-one jackknife target is undefined.  The internal
+  bootstrap engine supports observation, cluster, and stratified cluster
+  resampling and can return aligned loading/score replicates for downstream
+  reuse.
+
+- Added `joint_variance_partition()` for feature-level joint/individual/
+  residual sum-of-squares decomposition.  The function requires the original
+  `blocks` and computes residuals explicitly as `X - J - I` instead of
+  trusting the optional noise slot.
+
+- `assess_stability()` can now attach bootstrap replicate arrays via
+  `return_replicates = TRUE`, and accepts cluster/strata resampling arguments.
+  Existing summaries are preserved by default.
+
+- `associate_components()` gains `propagate_uncertainty = "bootstrap"`,
+  adding stability, effect-size quantile, and median-p-value summaries while
+  preserving the original point-estimate `p_value` output.
+
+- `extract_components(..., ci = ...)`, `plot_components(plot_type =
+  "loading_ci")`, and `autoplot(..., plot_type = "loading_ci")` provide a
+  user-facing path from `rajive_ci()` output to loading-interval tables and
+  plots.
+
 - `jackstraw_rajive()` gains three new arguments for posterior inclusion
   probabilities: `pip` (default `FALSE`), `pip_pi0`, and `pip_group`
   (`"component"`, `"block_component"`, or `"pooled"`).  When `pip = TRUE`,
@@ -89,6 +115,11 @@
   in the signature, preserving the original positional slot of `joint_rank`.
 
 ## New vignettes
+
+- Added `vignettes/inference.Rmd`: simulated-data inference walkthrough that
+  exercises feature-level variance partition, loading CIs, BCa rank intervals,
+  loading-CI plotting, and score-uncertainty propagation.  A fast render check
+  is included in the test suite when the source vignette is available.
 
 - Added `vignettes/function_gallery.Rmd`: comprehensive API gallery covering
   all ~38 exported functions with simulated examples, plots, and

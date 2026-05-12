@@ -16,6 +16,10 @@ assess_stability(
   n_perm = 100L,
   sample_frac = 0.8,
   num_cores = 1L,
+  cluster = NULL,
+  strata = NULL,
+  resample = NULL,
+  return_replicates = FALSE,
   ...
 )
 
@@ -64,6 +68,19 @@ bootstrap replicate.  Default 0.8.}
 
 \item{num_cores}{Positive integer.  Number of cores for parallel execution.
 Default 1 (no parallelism).}
+
+\item{cluster}{Optional cluster identifier per sample.  When supplied and
+\code{resample} is \code{NULL}, bootstrap refits resample whole clusters.}
+
+\item{strata}{Optional stratum identifier per sample for stratified
+cluster bootstrap.}
+
+\item{resample}{Character scalar or \code{NULL}.  \code{"observation"}
+resamples rows; \code{"cluster"} resamples clusters.  \code{NULL}
+chooses cluster resampling when \code{cluster} is supplied.}
+
+\item{return_replicates}{Logical.  When \code{TRUE}, the returned summary
+carries bootstrap arrays in \code{attr(result, "replicates")}.}
 
 \item{...}{Reserved for future arguments.}
 }

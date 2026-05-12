@@ -62,6 +62,9 @@
 #' @param jackstraw_result An optional object of class
 #'   \code{"jackstraw_rajive"} (output of \code{\link{jackstraw_rajive}}).
 #'   Required when \code{source = "jackstraw"}.
+#' @param ci Optional \code{data.frame} returned by \code{\link{rajive_ci}}.
+#'   When supplied with \code{format = "long"}, matching interval columns are
+#'   appended for supported extraction modes.
 #' @param format Character. \code{"wide"} (default) returns a named list of
 #'   class \code{c("rajive_diagnostics", "list")}; \code{"long"} returns a
 #'   tidy \code{data.frame} with one row per observed singular value.
@@ -132,6 +135,7 @@ extract_components <- function(ajive_output = NULL,
                                block = NULL,
                                component = NULL,
                                jackstraw_result = NULL,
+                               ci = NULL,
                                format = c("wide", "long"),
                                include_meta = FALSE,
                                ...) {
@@ -160,8 +164,9 @@ extract_components <- function(ajive_output = NULL,
   }
 
   if (what == "loadings") {
-    return(.extract_loadings(ajive_output, type = type, block = block,
-                             component = component, format = format))
+    out <- .extract_loadings(ajive_output, type = type, block = block,
+                             component = component, format = format)
+    return(.merge_ci_columns(out, ci, what = "loadings", format = format))
   }
 
   if (what == "variance") {
@@ -196,6 +201,91 @@ extract_components <- function(ajive_output = NULL,
   stop("Unsupported extraction request.", call. = FALSE)
 }
 
+.ci_block_matches <- function(ci_block, block_value) {
+  block_chr <- as.character(block_value)
+  candidates <- c(block_chr, paste0("block", block_chr))
+  ci_block %in% candidates
+}
+
+.ci_feature_key <- function(x) {
+  if (is.null(x)) return(character(0))
+  if (is.numeric(x) || is.integer(x)) return(as.character(as.integer(x)))
+  x_chr <- as.character(x)
+  feature_num <- suppressWarnings(as.integer(sub("^feature", "", x_chr)))
+  ifelse(!is.na(feature_num) & grepl("^feature[0-9]+$", x_chr),
+         as.character(feature_num), x_chr)
+}
+
+.ci_match_by_estimate <- function(out_values, ci_values) {
+  if (anyDuplicated(ci_values) || anyDuplicated(out_values)) return(NULL)
+  idx <- match(out_values, ci_values)
+  if (anyNA(idx)) return(NULL)
+  idx
+}
+
+.merge_ci_columns <- function(out, ci, what, format) {
+  if (is.null(ci)) return(out)
+  if (!is.data.frame(ci)) {
+    stop("`ci` must be a data.frame returned by rajive_ci().", call. = FALSE)
+  }
+  if (format != "long") {
+    stop("`ci` merging is supported only with format = 'long'.", call. = FALSE)
+  }
+  target <- switch(what, loadings = "loadings", scores = "scores", what)
+  ci <- ci[ci$target == target, , drop = FALSE]
+  if (nrow(ci) == 0L) {
+    stop("`ci` does not contain intervals for requested extraction target.",
+         call. = FALSE)
+  }
+
+  out$lower <- NA_real_
+  out$upper <- NA_real_
+  out$level <- NA_real_
+  out$ci_method <- NA_character_
+  out$n_replicates <- NA_integer_
+
+  keys <- unique(out[, c("block", "component"), drop = FALSE])
+  for (i in seq_len(nrow(keys))) {
+    out_idx <- which(out$block == keys$block[[i]] &
+                       out$component == keys$component[[i]])
+    ci_idx <- which(.ci_block_matches(ci$block, keys$block[[i]]) &
+                      ci$component == keys$component[[i]])
+    if (length(out_idx) != length(ci_idx)) {
+      component_idx <- which(ci$component == keys$component[[i]])
+      candidates <- split(component_idx, ci$block[component_idx])
+      candidate_matches <- lapply(candidates, function(idx) {
+        if (length(idx) != length(out_idx)) return(NULL)
+        .ci_match_by_estimate(out$loading[out_idx], ci$estimate[idx])
+      })
+      valid <- which(!vapply(candidate_matches, is.null, logical(1L)))
+      if (length(valid) != 1L) {
+        stop("`ci` rows do not match extracted rows for block/component ",
+             keys$block[[i]], "/", keys$component[[i]], ".", call. = FALSE)
+      }
+      ci_idx <- candidates[[valid]]
+      ci_idx <- ci_idx[candidate_matches[[valid]]]
+    }
+    out_key <- .ci_feature_key(out$feature[out_idx])
+    ci_key <- .ci_feature_key(ci$feature[ci_idx])
+    match_idx <- match(out_key, ci_key)
+    if (anyNA(match_idx) || anyDuplicated(ci_key)) {
+      match_idx <- .ci_match_by_estimate(out$loading[out_idx], ci$estimate[ci_idx])
+      if (is.null(match_idx)) {
+        stop("`ci` rows do not match extracted feature keys for block/component ",
+             keys$block[[i]], "/", keys$component[[i]], ".", call. = FALSE)
+      }
+    }
+    ci_idx <- ci_idx[match_idx]
+    out$lower[out_idx] <- ci$lower[ci_idx]
+    out$upper[out_idx] <- ci$upper[ci_idx]
+    out$level[out_idx] <- ci$level[ci_idx]
+    out$ci_method[out_idx] <- ci$method[ci_idx]
+    out$n_replicates[out_idx] <- ci$n_replicates[ci_idx]
+  }
+
+  out
+}
+
 
 # ---------------------------------------------------------------------------
 # plot_components
@@ -221,6 +311,8 @@ extract_components <- function(ajive_output = NULL,
 #'   \item{\code{"pairs"}, \code{"density"}}{Score scatter or density plots.}
 #'   \item{\code{"top_features"}, \code{"component_heatmap"}}{Feature-loading
 #'     summaries from the decomposition.}
+#'   \item{\code{"loading_ci"}}{Top loading estimates with bootstrap confidence
+#'     intervals from \code{\link{rajive_ci}}.}
 #'   \item{\code{"variance"}}{Variance explained across blocks; requires
 #'     \code{blocks}.}
 #'   \item{\code{"association"}}{Association-result summary plots.}
@@ -273,6 +365,8 @@ extract_components <- function(ajive_output = NULL,
 #'     \item{\code{cutoff_quantile}}{Numeric in (0, 1). Override the
 #'       percentile cutoff for bound-distribution plots (default: use the
 #'       cutoffs stored in the diagnostics payload).}
+#'     \item{\code{ci}}{Output from \code{\link{rajive_ci}}; required for
+#'       \code{plot_type = "loading_ci"}.}
 #'   }
 #'
 #' @return A \code{ggplot} object (or a \pkg{patchwork} composite for
@@ -303,6 +397,7 @@ plot_components <- function(ajive_output = NULL,
                             stability_result = NULL,
                             plot_type = c("pairs", "density", "top_features",
                                           "component_heatmap", "variance",
+                                          "loading_ci",
                                           "association", "volcano",
                                           "jackstraw_summary", "stability",
                                           "ajive_diagnostic", "rank_threshold",
@@ -358,6 +453,11 @@ plot_components <- function(ajive_output = NULL,
     if (is.null(blocks))
       stop("`blocks` must be supplied for plot_type = 'variance'.", call. = FALSE)
     return(.plot_variance_summary(ajive_output, blocks = blocks))
+  }
+  if (plot_type == "loading_ci") {
+    return(.plot_loading_ci(ajive_output, ci = dots$ci, type = type,
+                            block = block, component = component,
+                            top_n = as.integer(top_n)))
   }
   if (plot_type == "association") {
     return(.plot_association_summary(assoc_results = assoc_results, style = style))
@@ -589,7 +689,9 @@ plot_components <- function(ajive_output = NULL,
       if (format == "long") {
         df <- as.data.frame(mat, stringsAsFactors = FALSE)
         colnames(df) <- paste0("comp", comps)
-        df$feature <- seq_len(nrow(df))
+        feature <- rownames(mat)
+        if (is.null(feature)) feature <- seq_len(nrow(df))
+        df$feature <- feature
         df_long <- stats::reshape(
           df,
           varying = paste0("comp", comps),
@@ -998,6 +1100,45 @@ plot_components <- function(ajive_output = NULL,
     ggplot2::labs(x = "Feature", y = "Absolute loading", title = "Top-ranked features")
 }
 
+.plot_loading_ci <- function(ajive_output, ci, type, block, component, top_n) {
+  if (is.null(ci)) {
+    stop("`ci` must be supplied for plot_type = 'loading_ci'.", call. = FALSE)
+  }
+  tp <- if (type == "both") "joint" else type
+  if (tp != "joint") {
+    stop("plot_type = 'loading_ci' currently supports joint loadings only.",
+         call. = FALSE)
+  }
+  df <- extract_components(ajive_output, what = "loadings", type = tp,
+                           block = block, component = component,
+                           format = "long", ci = ci)
+  if (nrow(df) == 0L) {
+    stop("No loading intervals available for plotting.", call. = FALSE)
+  }
+  df <- df[is.finite(df$loading) & is.finite(df$lower) & is.finite(df$upper), ,
+           drop = FALSE]
+  if (nrow(df) == 0L) {
+    stop("Loading interval table contains no finite intervals.", call. = FALSE)
+  }
+  df$abs_loading <- abs(df$loading)
+  df <- df[order(df$abs_loading, decreasing = TRUE), , drop = FALSE]
+  df <- df[seq_len(min(nrow(df), top_n)), , drop = FALSE]
+  df$feature_label <- paste0("B", df$block, ":f", df$feature)
+  df$feature_label <- factor(df$feature_label, levels = rev(df$feature_label))
+
+  ggplot2::ggplot(df, ggplot2::aes(x = .data$feature_label,
+                                   y = .data$loading,
+                                   ymin = .data$lower,
+                                   ymax = .data$upper)) +
+    ggplot2::geom_hline(yintercept = 0, color = "grey70", linewidth = 0.4) +
+    ggplot2::geom_pointrange(color = "steelblue", linewidth = 0.5) +
+    ggplot2::coord_flip() +
+    ggplot2::facet_wrap(~ component, scales = "free_y") +
+    ggplot2::theme_bw() +
+    ggplot2::labs(x = "Feature", y = "Loading",
+                  title = "Joint loading confidence intervals")
+}
+
 .plot_component_heatmap <- function(ajive_output, type, block, component) {
   sc <- .resolve_plot_scores(ajive_output, if (type == "both") "joint" else type, block)
   comps <- if (is.null(component)) seq_len(ncol(sc)) else as.integer(component)
@@ -1135,9 +1276,10 @@ plot_components <- function(ajive_output = NULL,
 #' \strong{Score estimation error:}
 #' Component scores are estimated quantities, not fixed design variables.
 #' Estimation error attenuates effect sizes and inflates Type-I error in naive
-#' tests. P-values returned by this function do \strong{not} propagate score
-#' estimation uncertainty.  Treat results as post-decomposition exploratory
-#' associations, not exact fixed-design inference.
+#' tests. By default, p-values returned by this function do \strong{not}
+#' propagate score estimation uncertainty.  Use
+#' \code{propagate_uncertainty = "bootstrap"} to add bootstrap stability,
+#' effect-quantile, and median-p-value summaries.
 #'
 #' \strong{Survival split bias:}
 #' When \code{mode = "survival"} and a score-split (\code{split = "median"}
@@ -1177,11 +1319,32 @@ plot_components <- function(ajive_output = NULL,
 #' @param block Integer or \code{NULL}.  Block index for individual scores.
 #' @param component Integer or \code{NULL}.  Restrict analysis to a single
 #'   component index.
+#' @param propagate_uncertainty Character scalar. \code{"none"} preserves the
+#'   historical fixed-score analysis; \code{"bootstrap"} adds score-refit
+#'   uncertainty summaries.
+#' @param B Positive integer. Number of bootstrap refits when replicates are
+#'   not supplied.
+#' @param level Numeric confidence level for bootstrap effect-size quantiles.
+#' @param alpha_stability Numeric p-value threshold used to compute the
+#'   bootstrap stability fraction.
+#' @param cluster Optional cluster identifier per sample for cluster bootstrap.
+#' @param strata Optional stratum identifier per sample for stratified cluster
+#'   bootstrap.
+#' @param replicates Optional bootstrap output containing a 3D \code{scores}
+#'   array, typically from the internal bootstrap engine.
+#' @param blocks List of original block matrices. Required for automatic
+#'   bootstrap propagation when \code{replicates = NULL}.
+#' @param initial_signal_ranks Integer vector used for bootstrap refits when
+#'   \code{replicates = NULL}.
+#' @param num_cores Positive integer. Reserved for bootstrap execution.
 #' @param ... Reserved for future arguments.
 #'
 #' @return A \code{data.frame} with one row per variable x component
 #'   combination and columns \code{variable}, \code{component}, \code{stat},
-#'   \code{p_value}, \code{p_adj}, and \code{method}.
+#'   \code{p_value}, \code{p_adj}, and \code{method}.  With
+#'   \code{propagate_uncertainty = "bootstrap"}, columns \code{stability},
+#'   \code{effect_lo}, \code{effect_hi}, \code{p_median}, and
+#'   \code{p_adj_median} are appended.
 #'
 #' @examples
 #' \donttest{
@@ -1210,11 +1373,22 @@ associate_components <- function(ajive_output,
                                  type        = c("joint", "individual"),
                                  block       = NULL,
                                  component   = NULL,
+                                 propagate_uncertainty = c("none", "bootstrap"),
+                                 B           = 200L,
+                                 level       = 0.95,
+                                 alpha_stability = 0.05,
+                                 cluster     = NULL,
+                                 strata      = NULL,
+                                 replicates  = NULL,
+                                 blocks      = NULL,
+                                 initial_signal_ranks = NULL,
+                                 num_cores   = 1L,
                                  ...) {
 
   mode  <- match.arg(mode)
   type  <- match.arg(type)
   split <- match.arg(split)
+  propagate_uncertainty <- match.arg(propagate_uncertainty)
 
   # --- input validation ---
   if (!inherits(ajive_output, "rajive"))
@@ -1234,12 +1408,27 @@ associate_components <- function(ajive_output,
          paste(missing_vars, collapse = ", "), call. = FALSE)
 
   # --- mandatory inferential warning (#4) ---
-  message(
-    "[associate_components] NOTE: Component scores are estimated quantities. ",
-    "Score estimation error is NOT propagated into the returned p-values. ",
-    "Treat results as post-decomposition exploratory associations, not exact ",
-    "fixed-design inference."
-  )
+  if (propagate_uncertainty == "none") {
+    message(
+      "[associate_components] NOTE: Component scores are estimated quantities. ",
+      "Score estimation error is NOT propagated into the returned p-values. ",
+      "Treat results as post-decomposition exploratory associations, not exact ",
+      "fixed-design inference."
+    )
+  } else {
+    message(
+      "[associate_components] NOTE: Bootstrap propagation summarizes score ",
+      "estimation uncertainty through stability, effect quantiles, and median ",
+      "p-values. The original p_value column is preserved for the point estimate."
+    )
+    if (!is.null(cluster)) {
+      message(
+        "[associate_components] NOTE: Cluster bootstrap affects stability and ",
+        "effect quantiles, but per-replicate p-values still use the selected ",
+        "fixed-effect test and should not be treated as cluster-robust."
+      )
+    }
+  }
 
   # --- survival split bias warning (#5) ---
   if (mode == "survival" && split != "none") {
@@ -1303,7 +1492,117 @@ associate_components <- function(ajive_output,
 
   out <- do.call(rbind, rows)
   out$p_adj <- stats::p.adjust(out$p_value, method = adjust)
-  out[, c("variable", "component", "stat", "p_value", "p_adj", "method")]
+  out <- out[, c("variable", "component", "stat", "p_value", "p_adj", "method")]
+
+  if (propagate_uncertainty == "none") {
+    return(out)
+  }
+
+  if (is.null(replicates)) {
+    if (is.null(blocks) || is.null(initial_signal_ranks)) {
+      stop("`blocks` and `initial_signal_ranks` are required when ",
+           "`propagate_uncertainty = \"bootstrap\"` and `replicates` is NULL.",
+           call. = FALSE)
+    }
+    if (type != "joint") {
+      stop("Automatic bootstrap propagation currently supports joint scores only. ",
+           "Supply `replicates` for custom score arrays.", call. = FALSE)
+    }
+    replicates <- .rajive_bootstrap(
+      ajive_output = ajive_output,
+      blocks = blocks,
+      initial_signal_ranks = initial_signal_ranks,
+      B = B,
+      cluster = cluster,
+      strata = strata,
+      num_cores = num_cores,
+      keep = "scores",
+      ...
+    )
+  }
+  if (is.null(replicates$scores) || length(dim(replicates$scores)) != 3L) {
+    stop("`replicates` must contain a 3D `scores` array.", call. = FALSE)
+  }
+
+  unc <- .association_uncertainty_columns(
+    out = out,
+    metadata = metadata,
+    score_reps = replicates$scores,
+    mode = mode,
+    method = method,
+    time_col = time_col,
+    status_col = status_col,
+    split = split,
+    alpha_stability = alpha_stability,
+    level = level,
+    adjust = adjust
+  )
+  cbind(out, unc)
+}
+
+.association_complete_rows <- function(x, metadata, variable, mode,
+                                       time_col, status_col) {
+  ok <- is.finite(x) & !is.na(metadata[[variable]])
+  if (mode == "continuous") {
+    ok <- ok & is.finite(as.numeric(metadata[[variable]]))
+  }
+  if (mode == "survival") {
+    ok <- ok & !is.na(metadata[[time_col]]) & !is.na(metadata[[status_col]])
+  }
+  ok
+}
+
+.association_uncertainty_columns <- function(out, metadata, score_reps,
+                                             mode, method, time_col,
+                                             status_col, split,
+                                             alpha_stability, level,
+                                             adjust) {
+  B <- dim(score_reps)[3L]
+  stability <- effect_lo <- effect_hi <- p_median <- rep(NA_real_, nrow(out))
+
+  for (r in seq_len(nrow(out))) {
+    v <- out$variable[[r]]
+    j <- out$component[[r]]
+    stats_b <- rep(NA_real_, B)
+    p_b <- rep(NA_real_, B)
+
+    for (b in seq_len(B)) {
+      x_b <- score_reps[, j, b]
+      ok <- .association_complete_rows(x_b, metadata, v, mode,
+                                       time_col, status_col)
+      if (sum(ok) < 3L) next
+      res_b <- tryCatch(
+        .associate_one(x_b[ok], metadata[[v]][ok], mode, method,
+                       time_col, status_col, split, metadata[ok, , drop = FALSE]),
+        error = function(e) NULL
+      )
+      if (is.null(res_b)) next
+      stats_b[[b]] <- res_b$stat
+      p_b[[b]] <- res_b$p_value
+    }
+
+    good_p <- is.finite(p_b)
+    if (any(good_p)) {
+      stability[[r]] <- mean(p_b[good_p] < alpha_stability)
+      p_median[[r]] <- stats::median(p_b[good_p])
+    }
+    good_stat <- is.finite(stats_b)
+    if (any(good_stat)) {
+      qs <- stats::quantile(stats_b[good_stat], probs = .ci_probs(level),
+                            names = FALSE, type = 6)
+      effect_lo[[r]] <- qs[[1L]]
+      effect_hi[[r]] <- qs[[2L]]
+    }
+  }
+
+  data.frame(
+    stability = stability,
+    effect_lo = effect_lo,
+    effect_hi = effect_hi,
+    p_median = p_median,
+    p_adj_median = stats::p.adjust(p_median, method = adjust),
+    stringsAsFactors = FALSE
+  )
 }
 
 
@@ -1422,6 +1721,15 @@ associate_components <- function(ajive_output,
 #'   bootstrap replicate.  Default 0.8.
 #' @param num_cores Positive integer.  Number of cores for parallel execution.
 #'   Default 1 (no parallelism).
+#' @param cluster Optional cluster identifier per sample.  When supplied and
+#'   \code{resample} is \code{NULL}, bootstrap refits resample whole clusters.
+#' @param strata Optional stratum identifier per sample for stratified
+#'   cluster bootstrap.
+#' @param resample Character scalar or \code{NULL}.  \code{"observation"}
+#'   resamples rows; \code{"cluster"} resamples clusters.  \code{NULL}
+#'   chooses cluster resampling when \code{cluster} is supplied.
+#' @param return_replicates Logical.  When \code{TRUE}, the returned summary
+#'   carries bootstrap arrays in \code{attr(result, "replicates")}.
 #' @param ... Reserved for future arguments.
 #'
 #' @return A named list whose structure depends on \code{target}:
@@ -1459,6 +1767,10 @@ assess_stability <- function(ajive_output = NULL,
                              n_perm      = 100L,
                              sample_frac = 0.8,
                              num_cores   = 1L,
+                             cluster     = NULL,
+                             strata      = NULL,
+                             resample    = NULL,
+                             return_replicates = FALSE,
                              ...) {
 
   target <- match.arg(target)
@@ -1475,151 +1787,102 @@ assess_stability <- function(ajive_output = NULL,
   if (sample_frac <= 0 || sample_frac > 1)
     stop("`sample_frac` must be in (0, 1].", call. = FALSE)
 
-  n_samples <- nrow(blocks[[1L]])
+  if (is.null(ajive_output) && target != "joint_rank") {
+    stop("`ajive_output` must be supplied for target = '", target, "'.",
+         call. = FALSE)
+  }
+  if (!is.null(ajive_output) && !inherits(ajive_output, "rajive")) {
+    stop("`ajive_output` must be of class \"rajive\".", call. = FALSE)
+  }
 
-  switch(target,
+  keep <- switch(target,
+                 joint_rank = c("joint_rank", "indices"),
+                 loadings = c("loadings", "indices"),
+                 components = c("scores", "joint_rank", "component_cors", "indices"))
+  if (return_replicates && target == "loadings") {
+    keep <- unique(c(keep, "joint_rank"))
+  }
 
+  reps <- .rajive_bootstrap(
+    ajive_output = ajive_output,
+    blocks = blocks,
+    initial_signal_ranks = initial_signal_ranks,
+    B = B,
+    sample_frac = sample_frac,
+    cluster = cluster,
+    strata = strata,
+    resample = resample,
+    num_cores = num_cores,
+    keep = keep,
+    ...
+  )
+
+  result <- switch(target,
     joint_rank = {
-      rank_draws <- integer(B)
-      for (b in seq_len(B)) {
-        idx    <- sample.int(n_samples, size = max(2L, floor(sample_frac * n_samples)),
-                             replace = TRUE)
-        b_list <- lapply(blocks, function(X) X[idx, , drop = FALSE])
-        fit_b  <- tryCatch(
-          Rajive(b_list, initial_signal_ranks),
-          error = function(e) NULL
-        )
-        rank_draws[b] <- if (is.null(fit_b)) NA_integer_ else fit_b$joint_rank
-      }
       list(
-        rank_distribution = rank_draws,
-        rank_table        = table(rank_draws, useNA = "ifany"),
+        rank_distribution = reps$joint_rank,
+        rank_table        = table(reps$joint_rank, useNA = "ifany"),
         observed_rank     = if (!is.null(ajive_output)) ajive_output$joint_rank else NA_integer_
       )
     },
 
     loadings = {
-      if (is.null(ajive_output))
-        stop("`ajive_output` must be supplied for target = \"loadings\".",
-             call. = FALSE)
-      if (!inherits(ajive_output, "rajive"))
-        stop("`ajive_output` must be of class \"rajive\".", call. = FALSE)
-
-      K          <- length(blocks)
       joint_rank <- ajive_output$joint_rank
       if (joint_rank == 0L)
         stop("Cannot assess loading stability when joint_rank = 0.", call. = FALSE)
 
-      # Reference loadings: list of K matrices (features x joint_rank)
-      # block_decomps layout: individual at 3k-2, joint at 3k-1, noise at 3k
-      # $v = features x rank (loadings); $u = samples x rank (scores)
+      K <- length(blocks)
       ref_loadings <- lapply(seq_len(K), function(k) {
         ajive_output$block_decomps[[3L * (k - 1L) + 2L]]$v
       })
-
-      # Bootstrap loading draws: list-of-K, each element is an array
-      # (features x joint_rank x B)
-      boot_arrays <- lapply(seq_len(K), function(k) {
-        array(NA_real_,
-              dim = c(nrow(ref_loadings[[k]]), joint_rank, B))
-      })
-
-      for (b in seq_len(B)) {
-        idx    <- sample.int(n_samples, size = max(2L, floor(sample_frac * n_samples)),
-                             replace = TRUE)
-        b_list <- lapply(blocks, function(X) X[idx, , drop = FALSE])
-        fit_b  <- tryCatch(
-          Rajive(b_list, initial_signal_ranks),
-          error = function(e) NULL
-        )
-        if (is.null(fit_b) || fit_b$joint_rank < joint_rank) next
-
-        for (k in seq_len(K)) {
-          L_b <- fit_b$block_decomps[[3L * (k - 1L) + 2L]]$v
-          # Procrustes-align L_b to reference (Finding #3)
-          Q         <- .procrustes_align(ref_loadings[[k]], L_b)
-          L_aligned <- L_b %*% Q
-          boot_arrays[[k]][, , b] <- L_aligned
-        }
-      }
-
-      # Summarise across bootstrap replicates
-      result <- vector("list", K)
-      names(result) <- names(blocks)
+      out <- vector("list", K)
+      names(out) <- names(reps$loadings)
       for (k in seq_len(K)) {
-        arr         <- boot_arrays[[k]]
-        mean_load   <- apply(arr, c(1L, 2L), mean, na.rm = TRUE)
-        sd_load     <- apply(arr, c(1L, 2L), stats::sd, na.rm = TRUE)
-        ref         <- ref_loadings[[k]]
-        cos_sim     <- vapply(seq_len(joint_rank), function(j) {
-          ref_j  <- ref[, j]
-          mn_j   <- mean_load[, j]
+        arr <- reps$loadings[[k]]
+        mean_load <- apply(arr, c(1L, 2L), mean, na.rm = TRUE)
+        sd_load <- apply(arr, c(1L, 2L), stats::sd, na.rm = TRUE)
+        ref <- ref_loadings[[k]]
+        cos_sim <- vapply(seq_len(joint_rank), function(j) {
+          ref_j <- ref[, j]
+          mn_j <- mean_load[, j]
           sum(ref_j * mn_j) /
             (sqrt(sum(ref_j^2)) * sqrt(sum(mn_j^2)) + .Machine$double.eps)
         }, numeric(1L))
-        result[[k]] <- list(
-          mean_loading  = mean_load,
-          sd_loading    = sd_load,
+        out[[k]] <- list(
+          mean_loading = mean_load,
+          sd_loading = sd_load,
           cos_similarity = cos_sim
         )
       }
-      result
+      out
     },
 
     components = {
-      if (is.null(ajive_output))
-        stop("`ajive_output` must be supplied for target = 'components'.", call. = FALSE)
-      if (!inherits(ajive_output, "rajive"))
-        stop("`ajive_output` must be of class \"rajive\".", call. = FALSE)
-
       ref <- ajive_output$joint_scores
       if (is.null(ref) || ncol(ref) == 0L)
         stop("Joint scores are unavailable for component-stability assessment.", call. = FALSE)
 
       n_comp <- ncol(ref)
-      cor_mat <- matrix(NA_real_, nrow = B, ncol = n_comp)
-      rank_match_count <- 0L
-      n_valid <- 0L
-
-      for (b in seq_len(B)) {
-        idx <- sample.int(n_samples, size = max(2L, floor(sample_frac * n_samples)),
-                          replace = TRUE)
-        b_list <- lapply(blocks, function(X) X[idx, , drop = FALSE])
-        fit_b <- tryCatch(
-          Rajive(b_list, initial_signal_ranks),
-          error = function(e) NULL
-        )
-        if (is.null(fit_b) || is.null(fit_b$joint_scores)) next
-        bs <- fit_b$joint_scores
-        n_use <- min(ncol(bs), n_comp)
-        if (n_use < 1L) next
-        n_valid <- n_valid + 1L
-        if (ncol(bs) == n_comp) rank_match_count <- rank_match_count + 1L
-        # Align bootstrap components to the reference subspace to resolve
-        # sign and order ambiguity before per-component correlations.
-        ref_sub <- ref[idx, seq_len(n_use), drop = FALSE]
-        bs_sub  <- bs[, seq_len(n_use), drop = FALSE]
-        Q <- .procrustes_align(ref_sub, bs_sub)
-        bs_aligned <- bs_sub %*% Q
-        for (j in seq_len(n_use)) {
-          # Keep absolute correlation for residual sign indeterminacy.
-          cor_mat[b, j] <- suppressWarnings(
-            abs(stats::cor(ref_sub[, j], bs_aligned[, j],
-                           use = "pairwise.complete.obs"))
-          )
-        }
-      }
-
-      result <- data.frame(
+      out <- data.frame(
         component = seq_len(n_comp),
-        mean_correlation = apply(cor_mat, 2L, mean, na.rm = TRUE),
-        sd_correlation = apply(cor_mat, 2L, stats::sd, na.rm = TRUE),
+        mean_correlation = apply(reps$component_cors, 2L, mean, na.rm = TRUE),
+        sd_correlation = apply(reps$component_cors, 2L, stats::sd, na.rm = TRUE),
         stringsAsFactors = FALSE
       )
-      attr(result, "rank_match_rate") <- if (n_valid > 0L) rank_match_count / n_valid else NA_real_
-      result
+      valid <- !is.na(reps$joint_rank)
+      attr(out, "rank_match_rate") <- if (any(valid)) {
+        mean(reps$joint_rank[valid] == n_comp)
+      } else {
+        NA_real_
+      }
+      out
     }
   )
+
+  if (return_replicates) {
+    attr(result, "replicates") <- reps
+  }
+  result
 }
 
 
@@ -2646,6 +2909,7 @@ summarize_significant_vars <- function(jackstraw_result, block = NULL,
 autoplot.rajive <- function(object,
                             plot_type = c("pairs", "density", "top_features",
                                           "component_heatmap", "variance",
+                                          "loading_ci",
                                           "association", "volcano",
                                           "jackstraw_summary", "stability",
                                           "ajive_diagnostic", "rank_threshold",
