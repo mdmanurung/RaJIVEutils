@@ -35,6 +35,22 @@ when intervals are part of a real analysis.
 
 ```{r setup}
 library(rajiveplus)
+
+if (!exists("joint_variance_partition", mode = "function")) {
+  pkg_root <- if (file.exists(file.path("..", "DESCRIPTION"))) ".." else "."
+  tmp_lib <- tempfile("rajiveplus-lib-")
+  dir.create(tmp_lib)
+  utils::install.packages(pkg_root, repos = NULL, type = "source",
+                          lib = tmp_lib, quiet = TRUE)
+  if ("package:rajiveplus" %in% search()) {
+    detach("package:rajiveplus", unload = TRUE, character.only = TRUE)
+  }
+  if ("rajiveplus" %in% loadedNamespaces()) {
+    unloadNamespace("rajiveplus")
+  }
+  .libPaths(c(tmp_lib, .libPaths()))
+  library(rajiveplus)
+}
 ```
 
 ## A small joint signal
