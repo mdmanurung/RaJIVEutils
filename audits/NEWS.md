@@ -233,6 +233,21 @@
   validation, stability method validation, zero-rank robust SVD, and
   pkgdown/vignette metadata.
 
+- Audited `R/missing_data.R` against the current source and against missMDA's
+  regularized EM (`imputeMFA` / `MIMCA`); see
+  `audits/2026-05-15-missing-data-audit.md`. Added edge-case test files
+  `tests/testthat/test-missing-native-edge.R`,
+  `test-missing-native-edge-rank.R`, and `test-missing-native-shrinkage.R`
+  (shared fixture `helper-missing-union.R`). Six assertions are intentionally
+  *expected-red* — they encode confirmed findings (global RNG mutation in the
+  native fit and in `diagnose_missing_ranks()`; unclamped negative residual
+  variance in `.masked_variance_explained`; silent missMDA-shrinkage no-op when
+  the spectrum has no noise tail; missing convergence status from the weighted
+  EM loop; a fatal abort on union samples observed in no block where a
+  warn-and-drop would do) and turn green when the corresponding fix lands.
+  Added `inst/benchmarks/benchmarking_missing_heavy.Rmd`, a SLURM-gated
+  benchmark of the native missing-data path.
+
 - `data_heatmap()` is now exported. The internal `geom_raster()` mapping now
   uses `scale_y_discrete()` / `scale_x_discrete()` (previously
   `scale_y_continuous()` / `scale_x_continuous()`), which correctly matches
