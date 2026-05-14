@@ -27,14 +27,23 @@ The blocks share a latent sample trend but cover different subsets of samples,
 similar to a study where not every assay was measured for every participant.
 
 ```{r simulate}
-all_samples <- sprintf("sample_%02d", seq_len(30))
-latent <- as.numeric(scale(seq(-1, 1, length.out = length(all_samples)) +
-                             rnorm(length(all_samples), sd = 0.15)))
+all_samples <- sprintf("sample_%02d", seq_len(50))
+joint_scores <- scale(cbind(
+  seq(-1, 1, length.out = length(all_samples)) +
+    rnorm(length(all_samples), sd = 0.15),
+  sin(seq(0, 2 * pi, length.out = length(all_samples))) +
+    rnorm(length(all_samples), sd = 0.15)
+))
 
-make_block <- function(sample_idx, n_features, prefix, noise = 0.20) {
-  loadings <- seq(1.2, 0.4, length.out = n_features) *
-    sample(c(-1, 1), n_features, replace = TRUE)
-  x <- outer(latent[sample_idx], loadings) +
+make_block <- function(sample_idx, n_features, prefix, noise = 0.45) {
+  joint_loadings <- cbind(
+    rnorm(n_features, sd = 0.8),
+    rnorm(n_features, sd = 0.6)
+  )
+  individual_score <- as.numeric(scale(rnorm(length(sample_idx))))
+  individual_loadings <- rnorm(n_features, sd = 0.35)
+  x <- joint_scores[sample_idx, , drop = FALSE] %*% t(joint_loadings) +
+    outer(individual_score, individual_loadings) +
     matrix(rnorm(length(sample_idx) * n_features, sd = noise),
            nrow = length(sample_idx))
   rownames(x) <- all_samples[sample_idx]
@@ -43,9 +52,9 @@ make_block <- function(sample_idx, n_features, prefix, noise = 0.20) {
 }
 
 raw_blocks <- list(
-  celltype = make_block(1:18, 6, "cell"),
-  cytokine_6h = make_block(7:24, 5, "cy6"),
-  enzyme_24h = make_block(c(1:10, 15:24), 4, "enz")
+  celltype = make_block(1:42, 96, "cell"),
+  cytokine_6h = make_block(10:50, 104, "cy6"),
+  enzyme_24h = make_block(c(1:25, 31:50), 88, "enz")
 )
 
 raw_blocks$cytokine_6h[2, 3] <- NA_real_
@@ -89,12 +98,13 @@ knitr::kable(sample_accounting)
 
 Native mode excludes missing cells from preprocessing, rank diagnostics, and the
 observed-entry objective. Here `joint_rank = NA` triggers native candidate-rank
-diagnostics and selects from the supplied candidate set.
+diagnostics. Because `rank_candidates` is not set, the default candidate set is
+`0:min(initial_signal_ranks)`.
 
 ```{r fit}
 fit_union <- Rajive(
   blocks_union,
-  initial_signal_ranks = c(2L, 2L, 2L),
+  initial_signal_ranks = c(4L, 4L, 4L),
   missing = "native",
   mask = mask,
   joint_rank = NA,
@@ -102,8 +112,7 @@ fit_union <- Rajive(
   missing_control = rajive_missing_control(
     center = TRUE,
     scale = TRUE,
-    normalize = TRUE,
-    rank_candidates = 0:2
+    normalize = TRUE
   ),
   seed = 4202
 )

@@ -33,7 +33,7 @@ test_that("rank diagnostics report weak support rate", {
   expect_gt(diag$weak_support_rate, 0)
 })
 
-test_that("rank diagnostics report prediction error on the fitted preprocessing scale", {
+test_that("rank diagnostics report held-out prediction error on the fitted preprocessing scale", {
   set.seed(8703)
   blocks <- list(
     block1 = matrix(rnorm(72, mean = 100, sd = 20), nrow = 12),
@@ -65,12 +65,30 @@ test_that("rank diagnostics report prediction error on the fitted preprocessing 
   raw_observed_ss <- sum(vapply(seq_along(blocks), function(k) {
     sum(blocks[[k]][mask[[k]]]^2)
   }, numeric(1L)))
+  normalized <- rajiveplus:::.validate_native_missing_inputs(blocks, mask,
+                                                             control)
+  set.seed(8703)
+  folds <- rajiveplus:::.rank_holdout_folds(normalized$mask)
+  expected <- rajiveplus:::.rank_holdout_prediction_error(
+    blocks = normalized$blocks,
+    mask = normalized$mask,
+    folds = folds,
+    initial_signal_ranks = c(2L, 2L),
+    rank = 1L,
+    control = control,
+    full = TRUE,
+    num_cores = 1L,
+    identifiability_norm = "l2"
+  )
 
   expect_equal(
     diag$prediction_error,
-    fit$missing$convergence$objective / observed_ss,
+    expected,
     tolerance = 1e-8
   )
+  expect_gt(abs(diag$prediction_error -
+                  fit$missing$convergence$objective / observed_ss),
+            1e-4)
   expect_gt(abs(diag$prediction_error -
                   fit$missing$convergence$objective / raw_observed_ss),
             1e-4)

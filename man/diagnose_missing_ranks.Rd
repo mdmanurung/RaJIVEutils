@@ -44,6 +44,9 @@ Diagnose candidate joint ranks for native missing-data fits
 }
 \details{
 Native automatic rank selection picks the candidate minimising
-  \code{composite_score} = observed-entry \code{prediction_error} plus a
-  parsimony penalty of 0.001 per joint component.
+  \code{composite_score} = held-out observed-entry \code{prediction_error}
+  plus a parsimony penalty of 0.001 per joint component. When possible, the
+  holdout units are whole observed sample rows within a block, so the
+  diagnostic scores how well cross-block joint structure predicts
+  block/sample rows that were hidden from fitting.
 }

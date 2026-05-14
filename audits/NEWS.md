@@ -45,6 +45,19 @@
   `get_reconstructed_blocks()` attaches matching provenance as a
   `reconstruction_provenance` attribute on returned block lists.
 
+- Native automatic rank diagnostics now score candidate joint ranks by
+  holding out observed block/sample rows when possible, rather than by
+  reusing the fitted observed-entry residual objective. This fixes the
+  previous degeneracy where `joint_rank = NA` could always select the lowest
+  candidate, including rank 0, because smaller joint ranks left more
+  block-specific individual rank for in-sample reconstruction.
+
+- Native missing-data fits now warn with class
+  `rajiveplus_saturated_signal_rank` when any `initial_signal_ranks` entry is
+  at or above that block's maximum matrix rank. Such settings can nearly
+  interpolate observed entries and make residual variance look artificially
+  close to zero.
+
 ## Statistical changes
 
 - `get_random_direction_bound_robustH()` now uses classical `base::svd()`

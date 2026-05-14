@@ -95,6 +95,22 @@ test_that("native missing validation rejects rank count mismatches", {
   )
 })
 
+test_that("native missing validation warns on saturated initial signal ranks", {
+  set.seed(8901)
+  blocks <- list(
+    block1 = matrix(rnorm(24), nrow = 8),
+    block2 = matrix(rnorm(32), nrow = 8)
+  )
+  mask <- lapply(blocks, function(x) matrix(TRUE, nrow(x), ncol(x)))
+  mask$block1[2, 1] <- FALSE
+
+  expect_warning(
+    Rajive(blocks, c(3L, 2L), missing = "native", mask = mask,
+           joint_rank = 1L, identifiability_norm = "l2"),
+    class = "rajiveplus_saturated_signal_rank"
+  )
+})
+
 test_that("native missing classifier separates common missingness patterns", {
   blocks <- list(
     block1 = matrix(1:20, nrow = 5),

@@ -266,6 +266,31 @@
   invisible(initial_signal_ranks)
 }
 
+.warn_native_saturated_signal_ranks <- function(blocks, initial_signal_ranks) {
+  ranks <- as.integer(initial_signal_ranks)
+  max_ranks <- vapply(blocks, function(x) min(dim(x)), integer(1L))
+  saturated <- which(ranks >= max_ranks)
+  if (length(saturated) == 0L) return(invisible(FALSE))
+
+  block_names <- names(blocks)
+  if (is.null(block_names) || any(!nzchar(block_names))) {
+    block_names <- paste0("block", seq_along(blocks))
+  }
+  detail <- paste0(
+    block_names[saturated],
+    " rank=", ranks[saturated],
+    " max=", max_ranks[saturated],
+    collapse = "; "
+  )
+  cli::cli_warn(
+    c("Some native `initial_signal_ranks` are at or above a block's maximum matrix rank.",
+      "i" = "{detail}.",
+      "i" = "This can nearly interpolate observed entries and leave residual variance close to zero; use lower signal ranks from block scree diagnostics."),
+    class = "rajiveplus_saturated_signal_rank"
+  )
+  invisible(TRUE)
+}
+
 .center_scale_observed <- function(blocks, mask, center = TRUE, scale = FALSE,
                                    normalize = TRUE) {
   normalized <- .normalize_missing_mask(blocks, mask)
@@ -372,6 +397,22 @@
     x <- sweep(x, 2L, preprocess$center[[k]], "+")
     dimnames(x) <- dimnames(z)
     out[[k]] <- x
+  }
+
+  out
+}
+
+.apply_observed_preprocess <- function(blocks, preprocess) {
+  block_names <- names(preprocess$center)
+  out <- vector("list", length(blocks))
+  names(out) <- block_names
+
+  for (k in seq_along(blocks)) {
+    z <- sweep(blocks[[k]], 2L, preprocess$center[[k]], "-")
+    z <- sweep(z, 2L, preprocess$scale[[k]], "/")
+    z <- z / preprocess$frob_norm[[k]]
+    dimnames(z) <- dimnames(blocks[[k]])
+    out[[k]] <- z
   }
 
   out
@@ -668,11 +709,15 @@ rajive_missing_control <- function(center = FALSE, scale = FALSE,
                                num_cores = 1L,
                                seed = NA_integer_,
                                identifiability_norm = "l2",
+                               .warn_signal_rank = TRUE,
                                ...) {
   control <- .as_missing_control(missing_control)
   if (!is.na(seed)) set.seed(as.integer(seed))
   .validate_missing_blocks(blocks)
   .validate_native_initial_signal_ranks(initial_signal_ranks, length(blocks))
+  if (isTRUE(.warn_signal_rank)) {
+    .warn_native_saturated_signal_ranks(blocks, initial_signal_ranks)
+  }
 
   auto_rank <- FALSE
   if (is.character(joint_rank)) {
@@ -703,7 +748,8 @@ rajive_missing_control <- function(center = FALSE, scale = FALSE,
       full = full,
       num_cores = num_cores,
       seed = NA_integer_,
-      identifiability_norm = identifiability_norm
+      identifiability_norm = identifiability_norm,
+      .warn_signal_rank = FALSE
     )
     selected <- rank_diag$joint_rank[which.min(rank_diag$composite_score)]
     fit <- .Rajive_incomplete(
@@ -1232,6 +1278,154 @@ summary.rajive_incomplete <- function(object, ...) {
   invisible(list(ranks = ranks, missing = diag))
 }
 
+.split_rank_holdout_units <- function(units, n_folds = 5L) {
+  if (!is.data.frame(units) || nrow(units) == 0L) return(list())
+  n_folds <- min(as.integer(n_folds), nrow(units))
+  n_folds <- max(1L, n_folds)
+  units <- units[sample.int(nrow(units)), , drop = FALSE]
+
+  folds <- replicate(n_folds, units[0L, , drop = FALSE], simplify = FALSE)
+  fold_rows <- vector("list", n_folds)
+  for (i in seq_len(nrow(units))) {
+    fold_order <- order(vapply(folds, nrow, integer(1L)))
+    row_i <- units$row[[i]]
+    for (f in fold_order) {
+      if (row_i %in% fold_rows[[f]]) next
+      folds[[f]] <- rbind(folds[[f]], units[i, , drop = FALSE])
+      fold_rows[[f]] <- c(fold_rows[[f]], row_i)
+      break
+    }
+  }
+
+  Filter(function(x) nrow(x) > 0L, folds)
+}
+
+.rank_block_row_holdout_units <- function(mask) {
+  sample_block_support <- Reduce(`+`, lapply(mask, function(m) rowSums(m) > 0L))
+  rows <- lapply(seq_along(mask), function(k) {
+    obs <- mask[[k]]
+    feature_counts <- colSums(obs)
+    observed_rows <- which(rowSums(obs) > 0L)
+    eligible <- observed_rows[vapply(observed_rows, function(i) {
+      sample_block_support[[i]] > 1L &&
+        all(feature_counts - obs[i, ] > 0L)
+    }, logical(1L))]
+    if (length(eligible) == 0L) return(NULL)
+    data.frame(
+      block = k,
+      row = eligible,
+      col = NA_integer_,
+      whole_row = TRUE,
+      stringsAsFactors = FALSE
+    )
+  })
+  do.call(rbind, rows)
+}
+
+.rank_cell_holdout_units <- function(mask) {
+  sample_counts <- Reduce(`+`, lapply(mask, rowSums))
+  rows <- lapply(seq_along(mask), function(k) {
+    obs <- mask[[k]]
+    feature_counts <- colSums(obs)
+    idx <- which(obs, arr.ind = TRUE)
+    if (nrow(idx) == 0L) return(NULL)
+    keep <- feature_counts[idx[, "col"]] > 1L & sample_counts[idx[, "row"]] > 1L
+    idx <- idx[keep, , drop = FALSE]
+    if (nrow(idx) == 0L) return(NULL)
+    data.frame(
+      block = k,
+      row = idx[, "row"],
+      col = idx[, "col"],
+      whole_row = FALSE,
+      stringsAsFactors = FALSE
+    )
+  })
+  do.call(rbind, rows)
+}
+
+.rank_holdout_folds <- function(mask, n_folds = 5L) {
+  units <- .rank_block_row_holdout_units(mask)
+  if (is.null(units) || nrow(units) == 0L) {
+    units <- .rank_cell_holdout_units(mask)
+  }
+  .split_rank_holdout_units(units, n_folds = n_folds)
+}
+
+.rank_holdout_masks <- function(mask, holdout) {
+  training <- lapply(mask, function(m) {
+    out <- m
+    out[] <- m
+    out
+  })
+  withheld <- lapply(mask, function(m) {
+    out <- m
+    out[] <- FALSE
+    out
+  })
+
+  for (i in seq_len(nrow(holdout))) {
+    k <- holdout$block[[i]]
+    r <- holdout$row[[i]]
+    if (isTRUE(holdout$whole_row[[i]])) {
+      idx <- mask[[k]][r, ]
+      training[[k]][r, ] <- FALSE
+      withheld[[k]][r, ] <- idx
+    } else {
+      c <- holdout$col[[i]]
+      training[[k]][r, c] <- FALSE
+      withheld[[k]][r, c] <- mask[[k]][r, c]
+    }
+  }
+
+  list(training = training, holdout = withheld)
+}
+
+.rank_holdout_prediction_error <- function(blocks, mask, folds,
+                                           initial_signal_ranks, rank,
+                                           control, full, num_cores,
+                                           identifiability_norm) {
+  sse <- 0
+  denom <- 0
+
+  for (fold in folds) {
+    fold_masks <- .rank_holdout_masks(mask, fold)
+    fit <- .Rajive_incomplete(
+      blocks = blocks,
+      initial_signal_ranks = initial_signal_ranks,
+      joint_rank = rank,
+      mask = fold_masks$training,
+      missing_control = control,
+      full = full,
+      num_cores = num_cores,
+      seed = NA_integer_,
+      identifiability_norm = identifiability_norm,
+      .warn_signal_rank = FALSE
+    )
+    transformed <- .apply_observed_preprocess(blocks, fit$missing$preprocess)
+
+    for (k in seq_along(blocks)) {
+      idx <- fold_masks$holdout[[k]]
+      if (!any(idx)) next
+      joint <- .fit_component_matrix(fit, k, "joint", dimnames(blocks[[k]]))
+      individual <- .fit_component_matrix(fit, k, "individual",
+                                          dimnames(blocks[[k]]))
+      fitted <- joint + individual
+      y <- transformed[[k]][idx]
+      pred <- fitted[idx]
+      ok <- is.finite(y) & is.finite(pred)
+      if (!any(ok)) next
+      sse <- sse + sum((y[ok] - pred[ok])^2)
+      denom <- denom + sum(y[ok]^2)
+    }
+  }
+
+  if (!is.finite(denom) || denom <= .Machine$double.eps) {
+    denom <- sum(vapply(folds, function(fold) nrow(fold), integer(1L)))
+  }
+  if (!is.finite(denom) || denom <= .Machine$double.eps) return(NA_real_)
+  sse / denom
+}
+
 #' Diagnose candidate joint ranks for native missing-data fits
 #'
 #' @param blocks List of numeric data matrices.
@@ -1245,8 +1439,11 @@ summary.rajive_incomplete <- function(object, ...) {
 #' @param ... Reserved for future diagnostics.
 #'
 #' @details Native automatic rank selection picks the candidate minimising
-#'   \code{composite_score} = observed-entry \code{prediction_error} plus a
-#'   parsimony penalty of 0.001 per joint component.
+#'   \code{composite_score} = held-out observed-entry \code{prediction_error}
+#'   plus a parsimony penalty of 0.001 per joint component. When possible, the
+#'   holdout units are whole observed sample rows within a block, so the
+#'   diagnostic scores how well cross-block joint structure predicts
+#'   block/sample rows that were hidden from fitting.
 #'
 #' @return A data frame with columns \code{joint_rank},
 #'   \code{prediction_error}, \code{weak_support_rate},
@@ -1284,6 +1481,7 @@ diagnose_missing_ranks <- function(blocks,
   if (!is.na(seed)) set.seed(as.integer(seed))
 
   missing_fraction <- mean(!unlist(normalized$mask, use.names = FALSE))
+  folds <- .rank_holdout_folds(normalized$mask)
   diagnostic_blocks <- normalized$blocks
   if (missing_fraction > 0) {
     diagnostic_blocks <- .center_scale_observed(
@@ -1309,9 +1507,27 @@ diagnose_missing_ranks <- function(blocks,
       full = full,
       num_cores = num_cores,
       seed = NA_integer_,
-      identifiability_norm = identifiability_norm
+      identifiability_norm = identifiability_norm,
+      .warn_signal_rank = FALSE
     )
-    pred <- fit$missing$convergence$objective / observed_ss
+    if (length(folds) > 0L) {
+      pred <- .rank_holdout_prediction_error(
+        blocks = normalized$blocks,
+        mask = normalized$mask,
+        folds = folds,
+        initial_signal_ranks = initial_signal_ranks,
+        rank = rank,
+        control = control,
+        full = full,
+        num_cores = num_cores,
+        identifiability_norm = identifiability_norm
+      )
+    } else {
+      pred <- NA_real_
+    }
+    if (!is.finite(pred)) {
+      pred <- fit$missing$convergence$objective / observed_ss
+    }
     support <- .joint_support_table(fit)
     weak_rate <- mean(support$weak_support)
     data.frame(
@@ -1375,7 +1591,8 @@ diagnose_missing_ranks <- function(blocks,
       joint_rank = joint_rank,
       mask = refit_mask,
       missing_control = refit_control,
-      full = TRUE
+      full = TRUE,
+      .warn_signal_rank = FALSE
     )
     refits[[b]] <- .align_missing_refit(fit, refit)
   }
