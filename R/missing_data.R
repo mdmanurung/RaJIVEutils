@@ -230,15 +230,25 @@
     )
   }
 
-  empty_samples <- patterns$sample_summary$sample_id[
-    patterns$sample_summary$all_blocks_missing
-  ]
-  if (length(empty_samples) > 0L) {
-    cli::cli_abort(
-      c("Native missing-data mode cannot fit samples missing from every block.",
-        "x" = "All-missing sample(s): {paste(empty_samples, collapse = ', ')}."),
+  empty_sample_idx <- which(patterns$sample_summary$all_blocks_missing)
+  if (length(empty_sample_idx) > 0L) {
+    empty_samples <- patterns$sample_summary$sample_id[empty_sample_idx]
+    # Drop samples observed in no block rather than aborting: in the
+    # union-alignment workflow such samples carry zero information and the
+    # caller should not have to pre-filter the union by hand (audit F11).
+    cli::cli_warn(
+      c("Dropping sample(s) missing from every block.",
+        "i" = "Native missing-data mode cannot fit a sample with no observed entries; {length(empty_sample_idx)} sample{?s} dropped: {paste(empty_samples, collapse = ', ')}."),
       class = "rajiveplus_sample_all_missing"
     )
+    keep <- setdiff(seq_len(nrow(mask[[1L]])), empty_sample_idx)
+    blocks_kept <- lapply(normalized$blocks,
+                          function(x) x[keep, , drop = FALSE])
+    mask_kept <- lapply(mask, function(x) x[keep, , drop = FALSE])
+    normalized <- .normalize_missing_mask(blocks_kept, mask_kept)
+    block_names <- normalized$block_names
+    mask <- normalized$mask
+    patterns <- normalized$patterns
   }
 
   empty_features <- patterns$features[patterns$features$all_missing, , drop = FALSE]
@@ -365,6 +375,95 @@
   )
 }
 
+.center_scale_completed <- function(blocks, mask, center = TRUE, scale = FALSE,
+                                    normalize = TRUE) {
+  normalized <- .normalize_missing_mask(blocks, mask)
+  blocks <- normalized$blocks
+  mask <- normalized$mask
+  block_names <- normalized$block_names
+
+  out_blocks <- vector("list", length(blocks))
+  centers <- scales <- observed_counts <- vector("list", length(blocks))
+  frob_norms <- vector("list", length(blocks))
+  names(out_blocks) <- names(centers) <- names(scales) <-
+    names(observed_counts) <- names(frob_norms) <- block_names
+
+  for (k in seq_along(blocks)) {
+    x <- blocks[[k]]
+    if (!all(is.finite(x))) {
+      cli::cli_abort(
+        "Completed native missing-data blocks must be finite before preprocessing.",
+        class = "rajiveplus_invalid_input"
+      )
+    }
+    observed_counts[[k]] <- as.integer(colSums(mask[[k]]))
+
+    center_vec <- numeric(ncol(x))
+    if (isTRUE(center)) {
+      center_vec <- colMeans(x)
+    }
+    center_vec[!is.finite(center_vec)] <- 0
+
+    scale_vec <- rep(1, ncol(x))
+    if (isTRUE(scale)) {
+      scale_vec <- vapply(seq_len(ncol(x)), function(j) {
+        vals <- x[, j] - center_vec[[j]]
+        if (length(vals) <= 1L) 1 else sqrt(sum(vals^2) / (length(vals) - 1L))
+      }, numeric(1L))
+      scale_vec[!is.finite(scale_vec) | scale_vec <= .Machine$double.eps] <- 1
+    }
+
+    z <- sweep(sweep(x, 2L, center_vec, "-"), 2L, scale_vec, "/")
+    frob <- 1
+    if (isTRUE(normalize)) {
+      frob <- sqrt(sum(z^2))
+      if (!is.finite(frob) || frob <= .Machine$double.eps) {
+        frob <- 1
+      }
+      z <- z / frob
+    }
+    dimnames(z) <- dimnames(x)
+
+    out_blocks[[k]] <- z
+    centers[[k]] <- center_vec
+    scales[[k]] <- scale_vec
+    frob_norms[[k]] <- frob
+  }
+
+  list(
+    blocks = out_blocks,
+    mask = mask,
+    center = centers,
+    scale = scales,
+    frob_norm = frob_norms,
+    observed_counts = observed_counts,
+    center_enabled = isTRUE(center),
+    scale_enabled = isTRUE(scale),
+    normalize_enabled = isTRUE(normalize),
+    patterns = normalized$patterns,
+    block_names = block_names
+  )
+}
+
+.initialize_completed_blocks <- function(blocks, mask) {
+  out <- vector("list", length(blocks))
+  names(out) <- names(blocks)
+  for (k in seq_along(blocks)) {
+    x <- blocks[[k]]
+    obs <- mask[[k]]
+    completed <- x
+    for (j in seq_len(ncol(x))) {
+      replacement <- mean(x[obs[, j], j], na.rm = TRUE)
+      if (!is.finite(replacement)) replacement <- 0
+      completed[!obs[, j] | !is.finite(completed[, j]), j] <- replacement
+    }
+    completed[obs] <- x[obs]
+    dimnames(completed) <- dimnames(x)
+    out[[k]] <- completed
+  }
+  out
+}
+
 .backtransform_reconstruction <- function(recon, preprocess) {
   if (!is.list(recon) || length(recon) != length(preprocess$center)) {
     cli::cli_abort(
@@ -461,7 +560,11 @@
   if (!is.finite(denom) || denom <= .Machine$double.eps) denom <- 1
   joint_prop <- sum(joint[mask]^2) / denom
   individual_prop <- sum(individual[mask]^2) / denom
-  residual_prop <- 1 - joint_prop - individual_prop
+  # Clamp at zero: the 1 - J - I identity only holds when joint and individual
+  # are orthogonal at the observed cells, which they need not be; without the
+  # clamp `Resid` can be reported below zero whenever the two fits jointly
+  # carry more energy than the observed sum-of-squares (audit finding F8).
+  residual_prop <- max(0, 1 - joint_prop - individual_prop)
   c(
     Joint = joint_prop,
     Indiv = individual_prop,
@@ -504,6 +607,13 @@
 #'   singular values.
 #' @param svd_shrinkage_coeff Positive coefficient for \code{svd_shrinkage =
 #'   "missmda"}. Values above 1 shrink more strongly.
+#' @param max_iter Maximum iterations for the native outer completion loop and
+#'   weighted SVD completion subproblems.
+#' @param tol Relative convergence tolerance for native missing-data completion
+#'   objectives.
+#' @param warn_nonconvergence Logical; emit classed warnings when native
+#'   completion subproblems reach \code{max_iter}. Convergence status is always
+#'   recorded in the fit object.
 #' @param n_refits Number of aligned refits for \code{uncertainty =
 #'   "bootstrap"} or \code{"mi"}.
 #' @param censoring Optional list of censoring metadata, for example
@@ -520,6 +630,9 @@ rajive_missing_control <- function(center = FALSE, scale = FALSE,
                                    rank_repeats = 5L,
                                    svd_shrinkage = 0,
                                    svd_shrinkage_coeff = 1,
+                                   max_iter = 5L,
+                                   tol = 1e-2,
+                                   warn_nonconvergence = FALSE,
                                    n_refits = 5L,
                                    censoring = NULL,
                                    sensitivity = NULL) {
@@ -546,6 +659,14 @@ rajive_missing_control <- function(center = FALSE, scale = FALSE,
       svd_shrinkage_coeff <= 0) {
     svd_shrinkage_coeff <- 1
   }
+  max_iter <- as.integer(max_iter)
+  if (length(max_iter) != 1L || is.na(max_iter) || max_iter < 1L) {
+    max_iter <- 5L
+  }
+  tol <- as.numeric(tol)
+  if (length(tol) != 1L || is.na(tol) || !is.finite(tol) || tol <= 0) {
+    tol <- 1e-2
+  }
   list(
     center = isTRUE(center),
     scale = isTRUE(scale),
@@ -555,6 +676,9 @@ rajive_missing_control <- function(center = FALSE, scale = FALSE,
     rank_repeats = rank_repeats,
     svd_shrinkage = svd_shrinkage,
     svd_shrinkage_coeff = svd_shrinkage_coeff,
+    max_iter = max_iter,
+    tol = tol,
+    warn_nonconvergence = isTRUE(warn_nonconvergence),
     n_refits = as.integer(n_refits),
     censoring = censoring,
     sensitivity = sensitivity
@@ -651,6 +775,7 @@ rajive_missing_control <- function(center = FALSE, scale = FALSE,
   coefs <- matrix(0, nrow = r, ncol = ncol(x))
   ridge <- sqrt(.Machine$double.eps)
   underdetermined <- logical(ncol(x))
+  failed <- logical(ncol(x))
   for (j in seq_len(ncol(x))) {
     rows <- mask[, j]
     if (sum(rows) < r) {
@@ -659,15 +784,39 @@ rajive_missing_control <- function(center = FALSE, scale = FALSE,
     }
     design <- joint_scores[rows, , drop = FALSE]
     y <- x[rows, j]
+    if (any(!is.finite(design)) || any(!is.finite(y))) {
+      failed[j] <- TRUE
+      next
+    }
     lhs <- crossprod(design) + diag(ridge, r)
     rhs <- crossprod(design, y)
-    coefs[, j] <- as.numeric(solve(lhs, rhs))
+    coef_j <- tryCatch(
+      suppressWarnings(as.numeric(solve(lhs, rhs))),
+      error = function(e) {
+        tryCatch(
+          suppressWarnings(as.numeric(qr.solve(lhs, rhs, tol = sqrt(.Machine$double.eps)))),
+          error = function(e2) rep(NA_real_, r)
+        )
+      }
+    )
+    if (length(coef_j) != r || any(!is.finite(coef_j))) {
+      failed[j] <- TRUE
+      next
+    }
+    coefs[, j] <- coef_j
   }
   if (any(underdetermined)) {
     cli::cli_warn(
       c("Some features have fewer observed entries than the joint rank.",
         "i" = "{if (is.null(block_name)) 'A block' else block_name}: {sum(underdetermined)} feature{?s} had their joint contribution set to zero; that signal is absorbed into the individual component."),
       class = "rajiveplus_underdetermined_joint"
+    )
+  }
+  if (any(failed)) {
+    cli::cli_warn(
+      c("Some masked joint least-squares solves failed and were set to zero.",
+        "i" = "{if (is.null(block_name)) 'A block' else block_name}: {sum(failed)} feature{?s} could not be solved stably."),
+      class = "rajiveplus_joint_solve_failed"
     )
   }
   joint_scores %*% coefs
@@ -677,10 +826,13 @@ rajive_missing_control <- function(center = FALSE, scale = FALSE,
                                                 initial_signal_rank,
                                                 svd_shrinkage = 0,
                                                 svd_shrinkage_coeff = 1,
+                                                max_iter = 100L,
+                                                tol = 1e-7,
                                                 full = TRUE,
-                                                block_name = NULL) {
+                                                block_name = NULL,
+                                                estimation_mask = mask) {
   joint_rank <- ncol(joint_scores)
-  joint_full <- .solve_masked_joint_matrix(x, mask, joint_scores,
+  joint_full <- .solve_masked_joint_matrix(x, estimation_mask, joint_scores,
                                            block_name = block_name)
   dimnames(joint_full) <- dimnames(x)
   joint_decomp <- .component_decomp_from_matrix(joint_full,
@@ -688,12 +840,16 @@ rajive_missing_control <- function(center = FALSE, scale = FALSE,
                                                 full = full)
 
   residual_seed <- x - joint_full
-  residual_seed[!mask] <- NA_real_
+  residual_seed[!estimation_mask] <- NA_real_
   indiv_rank <- max(0L, as.integer(initial_signal_rank) - joint_rank)
   if (indiv_rank > 0L) {
-    indiv_svd <- RobRSVD.all(residual_seed, nrank = indiv_rank, weights = mask,
+    indiv_svd <- RobRSVD.all(residual_seed, nrank = indiv_rank,
+                             weights = estimation_mask,
                              shrinkage = svd_shrinkage,
-                             shrinkage_coeff = svd_shrinkage_coeff)
+                             shrinkage_coeff = svd_shrinkage_coeff,
+                             max_iter = max_iter,
+                             tol = tol,
+                             warn_nonconvergence = FALSE)
     individual_full <- svd_reconstruction(indiv_svd)
     individual_full[rowSums(mask) == 0L, ] <- 0
     individual_full[, colSums(mask) == 0L] <- 0
@@ -715,6 +871,114 @@ rajive_missing_control <- function(center = FALSE, scale = FALSE,
   noise <- matrix(0, nrow = nrow(x), ncol = ncol(x), dimnames = dimnames(x))
   noise[mask] <- x[mask] - joint_full[mask] - individual_full[mask]
   list(individual = indiv_decomp, joint = joint_decomp, noise = noise)
+}
+
+.fit_native_standardized_once <- function(blocks, mask, initial_signal_ranks,
+                                          joint_rank, control, full = TRUE,
+                                          block_names = names(blocks),
+                                          estimation_mask = mask,
+                                          use_completed_signal = FALSE,
+                                          identifiability_norm = "l2") {
+  if (is.null(block_names) || any(!nzchar(block_names))) {
+    block_names <- paste0("block", seq_along(blocks))
+  }
+
+  block_svd <- lapply(seq_along(blocks), function(k) {
+    weights <- if (isTRUE(use_completed_signal)) NULL else mask[[k]]
+    get_svd_robustH(
+      blocks[[k]],
+      rank = min(initial_signal_ranks[[k]], min(dim(blocks[[k]]))),
+      weights = weights,
+      shrinkage = control$svd_shrinkage,
+      shrinkage_coeff = control$svd_shrinkage_coeff,
+      max_iter = control$max_iter,
+      tol = control$tol,
+      warn_nonconvergence = control$warn_nonconvergence
+    )
+  })
+
+  signal_scores <- lapply(seq_along(block_svd), function(k) {
+    rank_k <- min(initial_signal_ranks[[k]], ncol(block_svd[[k]]$u))
+    block_svd[[k]]$u[, seq_len(rank_k), drop = FALSE]
+  })
+  signal_matrix <- do.call(cbind, signal_scores)
+  rank_for_signal <- min(joint_rank, min(dim(signal_matrix)))
+  if (rank_for_signal == 0L) {
+    joint_scores <- matrix(0, nrow = nrow(signal_matrix), ncol = 0L)
+    obs_svals <- numeric(0L)
+  } else {
+    signal_svd <- get_svd_robustH(
+      signal_matrix,
+      rank = rank_for_signal,
+      shrinkage = control$svd_shrinkage,
+      shrinkage_coeff = control$svd_shrinkage_coeff,
+      max_iter = control$max_iter,
+      tol = control$tol,
+      warn_nonconvergence = control$warn_nonconvergence
+    )
+    joint_scores <- signal_svd$u[, seq_len(rank_for_signal), drop = FALSE]
+    obs_svals <- signal_svd$d
+  }
+  if (ncol(joint_scores) < joint_rank) {
+    cli::cli_warn(
+      c("Requested `joint_rank` exceeds the recoverable joint dimension.",
+        "i" = "Reduced from {joint_rank} to {ncol(joint_scores)} (rank of the concatenated signal scores)."),
+      class = "rajiveplus_joint_rank_truncated"
+    )
+    joint_rank <- ncol(joint_scores)
+  }
+
+  block_decomps <- vector("list", length(blocks) * 3L)
+  objectives <- numeric(length(blocks))
+  variance <- vector("list", length(blocks))
+  fitted_blocks <- vector("list", length(blocks))
+  names(fitted_blocks) <- block_names
+  for (k in seq_along(blocks)) {
+    decomp <- .fit_incomplete_block_decomposition(
+      blocks[[k]], mask[[k]], joint_scores,
+      initial_signal_rank = initial_signal_ranks[[k]],
+      svd_shrinkage = control$svd_shrinkage,
+      svd_shrinkage_coeff = control$svd_shrinkage_coeff,
+      max_iter = control$max_iter,
+      tol = control$tol,
+      full = full,
+      block_name = block_names[[k]],
+      estimation_mask = estimation_mask[[k]]
+    )
+    block_decomps[[3L * (k - 1L) + 1L]] <- decomp$individual
+    block_decomps[[3L * (k - 1L) + 2L]] <- decomp$joint
+    block_decomps[[3L * k]] <- decomp$noise
+    joint_full <- .component_matrix_from_decomp(decomp$joint, dimnames(blocks[[k]]))
+    individual_full <- .component_matrix_from_decomp(decomp$individual,
+                                                     dimnames(blocks[[k]]))
+    fitted <- joint_full + individual_full
+    fitted_blocks[[k]] <- fitted
+    objectives[[k]] <- .masked_residual_ss(blocks[[k]], fitted, mask[[k]])
+    variance[[k]] <- .masked_variance_explained(blocks[[k]], joint_full,
+                                                individual_full, mask[[k]])
+  }
+
+  fit <- list(
+    block_decomps = block_decomps,
+    joint_scores = joint_scores,
+    joint_rank = joint_rank,
+    joint_rank_sel = list(
+      obs_svals = obs_svals,
+      joint_rank_estimate = joint_rank,
+      overall_sv_sq_threshold = NA_real_,
+      identifiability_norm = identifiability_norm,
+      native_missing = TRUE
+    )
+  )
+  class(fit) <- "rajive"
+
+  list(
+    fit = fit,
+    block_objective = objectives,
+    objective = sum(objectives),
+    variance = variance,
+    fitted_blocks = fitted_blocks
+  )
 }
 
 .attach_native_missing_metadata <- function(fit, normalized, control,
@@ -753,7 +1017,10 @@ rajive_missing_control <- function(center = FALSE, scale = FALSE,
                                .warn_signal_rank = TRUE,
                                ...) {
   control <- .as_missing_control(missing_control)
-  if (!is.na(seed)) set.seed(as.integer(seed))
+  if (!is.na(seed)) {
+    withr::local_preserve_seed()
+    set.seed(as.integer(seed))
+  }
   .validate_missing_blocks(blocks)
   .validate_native_initial_signal_ranks(initial_signal_ranks, length(blocks))
   if (isTRUE(.warn_signal_rank)) {
@@ -874,95 +1141,94 @@ rajive_missing_control <- function(center = FALSE, scale = FALSE,
     return(fit)
   }
 
-  preprocess <- .center_scale_observed(
-    normalized$blocks,
-    mask,
-    center = control$center,
-    scale = control$scale,
-    normalize = control$normalize
-  )
-  block_svd <- lapply(seq_along(preprocess$blocks), function(k) {
-    get_svd_robustH(preprocess$blocks[[k]],
-                    rank = min(initial_signal_ranks[[k]], min(dim(preprocess$blocks[[k]]))),
-                    weights = mask[[k]],
-                    shrinkage = control$svd_shrinkage,
-                    shrinkage_coeff = control$svd_shrinkage_coeff)
-  })
+  completed_blocks <- .initialize_completed_blocks(normalized$blocks, mask)
+  max_iter <- max(1L, as.integer(control$max_iter))
+  tol <- as.numeric(control$tol)
+  previous_objective <- Inf
+  converged <- FALSE
+  history <- data.frame(iteration = integer(0), objective = numeric(0),
+                        raw_objective = numeric(0), stringsAsFactors = FALSE)
+  final_preprocess <- NULL
+  final_state <- NULL
+  final_raw_objective <- NA_real_
+  final_raw_block_objective <- numeric(length(normalized$blocks))
 
-  signal_scores <- lapply(seq_along(block_svd), function(k) {
-    rank_k <- min(initial_signal_ranks[[k]], ncol(block_svd[[k]]$u))
-    block_svd[[k]]$u[, seq_len(rank_k), drop = FALSE]
-  })
-  signal_matrix <- do.call(cbind, signal_scores)
-  rank_for_signal <- min(joint_rank, min(dim(signal_matrix)))
-  if (rank_for_signal == 0L) {
-    joint_scores <- matrix(0, nrow = nrow(signal_matrix), ncol = 0L)
-    obs_svals <- numeric(0L)
-  } else {
-    signal_svd <- get_svd_robustH(signal_matrix, rank = rank_for_signal)
-    joint_scores <- signal_svd$u[, seq_len(rank_for_signal), drop = FALSE]
-    obs_svals <- signal_svd$d
-  }
-  if (ncol(joint_scores) < joint_rank) {
-    cli::cli_warn(
-      c("Requested `joint_rank` exceeds the recoverable joint dimension.",
-        "i" = "Reduced from {joint_rank} to {ncol(joint_scores)} (rank of the concatenated signal scores)."),
-      class = "rajiveplus_joint_rank_truncated"
+  for (iter in seq_len(max_iter)) {
+    preprocess <- .center_scale_completed(
+      completed_blocks,
+      mask,
+      center = control$center,
+      scale = control$scale,
+      normalize = control$normalize
     )
-    joint_rank <- ncol(joint_scores)
-  }
-
-  block_decomps <- vector("list", length(preprocess$blocks) * 3L)
-  objectives <- numeric(length(preprocess$blocks))
-  variance <- vector("list", length(preprocess$blocks))
-  for (k in seq_along(preprocess$blocks)) {
-    decomp <- .fit_incomplete_block_decomposition(
-      preprocess$blocks[[k]], mask[[k]], joint_scores,
-      initial_signal_rank = initial_signal_ranks[[k]],
-      svd_shrinkage = control$svd_shrinkage,
-      svd_shrinkage_coeff = control$svd_shrinkage_coeff,
+    state <- .fit_native_standardized_once(
+      blocks = preprocess$blocks,
+      mask = mask,
+      initial_signal_ranks = initial_signal_ranks,
+      joint_rank = joint_rank,
+      control = control,
       full = full,
-      block_name = preprocess$block_names[[k]]
+      block_names = preprocess$block_names,
+      estimation_mask = mask,
+      use_completed_signal = TRUE,
+      identifiability_norm = identifiability_norm
     )
-    block_decomps[[3L * (k - 1L) + 1L]] <- decomp$individual
-    block_decomps[[3L * (k - 1L) + 2L]] <- decomp$joint
-    block_decomps[[3L * k]] <- decomp$noise
-    joint_full <- .component_matrix_from_decomp(
-      decomp$joint, dimnames(preprocess$blocks[[k]])
+
+    raw_recon <- .backtransform_reconstruction(state$fitted_blocks, preprocess)
+    raw_block_objective <- vapply(seq_along(normalized$blocks), function(k) {
+      .masked_residual_ss(normalized$blocks[[k]], raw_recon[[k]], mask[[k]])
+    }, numeric(1L))
+    raw_objective <- sum(raw_block_objective)
+
+    history <- rbind(
+      history,
+      data.frame(iteration = iter, objective = state$objective,
+                 raw_objective = raw_objective, stringsAsFactors = FALSE)
     )
-    individual_full <- .component_matrix_from_decomp(
-      decomp$individual, dimnames(preprocess$blocks[[k]])
-    )
-    fitted <- joint_full + individual_full
-    objectives[[k]] <- .masked_residual_ss(preprocess$blocks[[k]], fitted, mask[[k]])
-    variance[[k]] <- .masked_variance_explained(preprocess$blocks[[k]],
-                                                joint_full,
-                                                individual_full,
-                                                mask[[k]])
+    final_preprocess <- preprocess
+    final_state <- state
+    final_raw_objective <- raw_objective
+    final_raw_block_objective <- raw_block_objective
+
+    if (is.finite(previous_objective) &&
+        abs(previous_objective - state$objective) <=
+          tol * (abs(previous_objective) + tol)) {
+      converged <- TRUE
+      break
+    }
+    previous_objective <- state$objective
+
+    for (k in seq_along(completed_blocks)) {
+      completed_blocks[[k]][!mask[[k]]] <- raw_recon[[k]][!mask[[k]]]
+      completed_blocks[[k]][mask[[k]]] <- normalized$blocks[[k]][mask[[k]]]
+    }
   }
 
-  fit <- list(
-    block_decomps = block_decomps,
-    joint_scores = joint_scores,
-    joint_rank = joint_rank,
-    joint_rank_sel = list(
-      obs_svals = obs_svals,
-      joint_rank_estimate = joint_rank,
-      overall_sv_sq_threshold = NA_real_,
-      identifiability_norm = identifiability_norm,
-      native_missing = TRUE
+  if (!isTRUE(converged) && isTRUE(control$warn_nonconvergence)) {
+    cli::cli_warn(
+      c("Native missing-data outer EM reached the iteration cap before convergence.",
+        "i" = "max_iter = {max_iter}, final objective = {signif(final_state$objective, 4)}."),
+      class = "rajiveplus_native_missing_no_converge"
     )
-  )
-  class(fit) <- "rajive"
+  }
 
   convergence <- list(
-    objective = sum(objectives),
-    block_objective = objectives
+    objective = final_state$objective,
+    block_objective = final_state$block_objective,
+    raw_objective = final_raw_objective,
+    raw_block_objective = final_raw_block_objective,
+    n_iter = nrow(history),
+    converged = converged,
+    tol = tol,
+    max_iter = max_iter,
+    outer_em = TRUE,
+    preprocessing = "completed_recentered",
+    history = history
   )
-  fit <- .attach_native_missing_metadata(fit, normalized, control,
-                                         convergence, preprocess,
+  fit <- .attach_native_missing_metadata(final_state$fit, normalized, control,
+                                         convergence, final_preprocess,
                                          initial_signal_ranks = initial_signal_ranks)
-  fit$missing$variance_explained <- variance
+  fit$missing$variance_explained <- final_state$variance
   fit
 }
 
@@ -1525,7 +1791,10 @@ diagnose_missing_ranks <- function(blocks,
       class = "rajiveplus_invalid_input"
     )
   }
-  if (!is.na(seed)) set.seed(as.integer(seed))
+  if (!is.na(seed)) {
+    withr::local_preserve_seed()
+    set.seed(as.integer(seed))
+  }
 
   missing_fraction <- mean(!unlist(normalized$mask, use.names = FALSE))
   rank_repeats <- max(1L, as.integer(control$rank_repeats))

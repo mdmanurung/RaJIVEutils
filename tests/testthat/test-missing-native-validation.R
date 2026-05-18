@@ -62,11 +62,13 @@ test_that("native missing validation rejects unsupported all-missing structures"
   mask_all_sample <- mask
   mask_all_sample$block1[3, ] <- FALSE
   mask_all_sample$block2[3, ] <- FALSE
-  expect_error(
-    rajiveplus:::.validate_native_missing_inputs(blocks, mask_all_sample),
+  expect_warning(
+    normalized <- rajiveplus:::.validate_native_missing_inputs(blocks, mask_all_sample),
     regexp = "s3",
     class = "rajiveplus_sample_all_missing"
   )
+  expect_equal(nrow(normalized$blocks$block1), 3L)
+  expect_false("s3" %in% rownames(normalized$blocks$block1))
 
   mask_all_feature <- mask
   mask_all_feature$block1[, 2] <- FALSE

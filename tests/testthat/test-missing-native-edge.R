@@ -1,9 +1,8 @@
 # Edge-case / robustness tests for native missing-data fitting.
 #
 # Audit 2026-05-15 (audits/2026-05-15-missing-data-audit.md). Tests tagged
-# `# EXPECTED-RED (audit F#)` are intentionally written against *desired*
-# behaviour and will FAIL until the corresponding finding in R/missing_data.R
-# is fixed. They are kept active (not skipped) so the audit gap stays visible.
+# `# Regression for audit F#` pin behaviour that was a confirmed gap in the
+# original audit; each turned green once the corresponding fix landed.
 #
 # make_union_blocks() is defined in helper-missing-union.R.
 
@@ -89,7 +88,7 @@ test_that("whole-row-missing sample gets a joint-only reconstruction", {
 })
 
 # ---------------------------------------------------------------------------
-# Expected-red tests: documented robustness/correctness gaps (see audit doc).
+# Regression tests: documented audit gaps that now stay green.
 # ---------------------------------------------------------------------------
 
 test_that(".solve_masked_joint_matrix stays finite on a rank-deficient design", {
@@ -112,8 +111,8 @@ test_that(".solve_masked_joint_matrix stays finite on a rank-deficient design", 
 })
 
 test_that("a native fit does not mutate the global RNG state", {
-  # EXPECTED-RED (audit F7): .Rajive_incomplete() calls bare set.seed() with no
-  # restore, so passing `seed=` silently overwrites the caller's RNG stream.
+  # Regression for audit F7: passing `seed=` is scoped to the call and the
+  # caller's RNG stream survives.
   ub <- make_union_blocks()
   set.seed(123)
   before <- .Random.seed
@@ -124,10 +123,9 @@ test_that("a native fit does not mutate the global RNG state", {
 })
 
 test_that(".masked_variance_explained never reports negative residual variance", {
-  # EXPECTED-RED (audit F8): residual_prop = 1 - joint_prop - individual_prop
-  # has no max(0, .) clamp. When the joint and individual fits jointly carry
-  # more energy than the observed sum-of-squares -- reachable in the pipeline
-  # when initial_signal_ranks saturate -- "Resid" is reported below zero.
+  # Regression for audit F8: residual_prop is clamped at zero, so even when
+  # joint + individual jointly carry more energy than the observed
+  # sum-of-squares the reported `Resid` is non-negative.
   x <- matrix(c(1, 1, 1, 1), 2, 2)
   joint <- matrix(c(1, 1, 1, 1), 2, 2)        # sum(joint^2)      = sum(x^2)
   individual <- matrix(c(1, 1, 1, 1), 2, 2)   # sum(individual^2) = sum(x^2)
@@ -137,12 +135,10 @@ test_that(".masked_variance_explained never reports negative residual variance",
   expect_gte(ve[["Resid"]], -1e-8)
 })
 
-test_that("a sample missing from every block is dropped, not fatal", {
-  # EXPECTED-RED (audit F11): .validate_native_missing_inputs() aborts with
-  # rajiveplus_sample_all_missing when a union sample is observed in no block.
-  # In the union-alignment workflow the vignette promotes, that is benign --
-  # the sample carries no information and should be dropped with a warning so
-  # the fit proceeds on the remaining samples.
+test_that("a sample missing from every block is dropped with a warning", {
+  # Regression for audit F11: .validate_native_missing_inputs() drops samples
+  # observed in no block (warning class rajiveplus_sample_all_missing) instead
+  # of aborting, so the union-alignment workflow needs no manual pre-filtering.
   set.seed(9111)
   blocks <- list(
     block1 = matrix(stats::rnorm(60), nrow = 10),
@@ -152,8 +148,11 @@ test_that("a sample missing from every block is dropped, not fatal", {
   mask$block1[5, ] <- FALSE
   mask$block2[5, ] <- FALSE                 # sample 5 observed in no block
 
-  expect_no_error(
-    Rajive(blocks, c(2L, 2L), missing = "native", mask = mask,
-           joint_rank = 1L)
+  expect_warning(
+    fit <- Rajive(blocks, c(2L, 2L), missing = "native", mask = mask,
+                  joint_rank = 1L),
+    class = "rajiveplus_sample_all_missing"
   )
+  expect_s3_class(fit, "rajive_incomplete")
+  expect_equal(nrow(fit$missing$mask$block1), 9L)
 })

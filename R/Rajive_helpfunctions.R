@@ -10,22 +10,31 @@
 #'   \code{\link{RobRSVD.all}}.
 #' @param shrinkage_coeff Positive coefficient forwarded to
 #'   \code{\link{RobRSVD.all}} when \code{shrinkage = "missmda"}.
+#' @param max_iter,tol Iteration cap and convergence tolerance forwarded to
+#'   the weighted SVD path.
+#' @param warn_nonconvergence Logical; warn if weighted completion reaches
+#'   \code{max_iter}.
 #'
 #' @return List. The SVD of X.
 
 
 
 get_svd_robustH <- function(X, rank=NULL, weights = NULL, shrinkage = 0,
-                            shrinkage_coeff = 1){
+                            shrinkage_coeff = 1, max_iter = 100L,
+                            tol = 1e-7, warn_nonconvergence = FALSE){
 
   if(is.null(rank)){
     decomposition <- RobRSVD.all(X, weights = weights, shrinkage = shrinkage,
-                                 shrinkage_coeff = shrinkage_coeff)
+                                 shrinkage_coeff = shrinkage_coeff,
+                                 max_iter = max_iter, tol = tol,
+                                 warn_nonconvergence = warn_nonconvergence)
     decomposition
   } else{
     decomposition <- RobRSVD.all(X, nrank = rank, weights = weights,
                                  shrinkage = shrinkage,
-                                 shrinkage_coeff = shrinkage_coeff)
+                                 shrinkage_coeff = shrinkage_coeff,
+                                 max_iter = max_iter, tol = tol,
+                                 warn_nonconvergence = warn_nonconvergence)
     decomposition
   }
 

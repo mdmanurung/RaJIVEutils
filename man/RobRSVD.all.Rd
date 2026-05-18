@@ -10,7 +10,10 @@ RobRSVD.all(
   svdinit = NULL,
   weights = NULL,
   shrinkage = 0,
-  shrinkage_coeff = 1
+  shrinkage_coeff = 1,
+  max_iter = 100L,
+  tol = 1e-07,
+  warn_nonconvergence = FALSE
 )
 }
 \arguments{

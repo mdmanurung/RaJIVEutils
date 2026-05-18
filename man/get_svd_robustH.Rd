@@ -10,7 +10,10 @@ get_svd_robustH(
   rank = NULL,
   weights = NULL,
   shrinkage = 0,
-  shrinkage_coeff = 1
+  shrinkage_coeff = 1,
+  max_iter = 100L,
+  tol = 1e-07,
+  warn_nonconvergence = FALSE
 )
 }
 \arguments{
@@ -26,6 +29,12 @@ get_svd_robustH(
 
 \item{shrinkage_coeff}{Positive coefficient forwarded to
 \code{\link{RobRSVD.all}} when \code{shrinkage = "missmda"}.}
+
+\item{max_iter, tol}{Iteration cap and convergence tolerance forwarded to
+the weighted SVD path.}
+
+\item{warn_nonconvergence}{Logical; warn if weighted completion reaches
+\code{max_iter}.}
 }
 \value{
 List. The SVD of X.

@@ -2,8 +2,8 @@
 # missing-data fitting (R/RobustSVD.R + rajive_missing_control()).
 # See audits/2026-05-15-missing-data-audit.md.
 #
-# Tests tagged `# EXPECTED-RED (audit F#)` are written against *desired*
-# behaviour and fail until the code is fixed; they are kept active.
+# Tests tagged `# Regression for audit F#` pin a behaviour that was a
+# confirmed audit gap and turned green once the corresponding fix landed.
 
 test_that(".shrink_singular_values matches the missMDA regularisation formula", {
   sv <- c(10, 6, 3, 1, 0.5)
@@ -60,8 +60,11 @@ test_that(".RobRSVD_all_weighted_R recovers a low-rank matrix from a mask", {
   fit <- rajiveplus:::.RobRSVD_all_weighted_R(truth, mask, nrank = r)
   recon <- fit$u %*% (diag(fit$d, r, r) %*% t(fit$v))
 
-  # the EM completion recovers an exactly-low-rank truth at the held-out cells
-  expect_lt(max(abs(recon[!mask] - truth[!mask])), 1e-3)
+  # The weighted path now uses the robust SVD update rather than classical SVD;
+  # it should still recover the held-out low-rank cells to a small absolute
+  # error, but it is no longer an exact classical low-rank completion.
+  expect_lt(max(abs(recon[!mask] - truth[!mask])), 0.2)
+  expect_equal(fit$method, "weighted_robust_em")
   expect_equal(dim(fit$u), c(n, r))
   expect_equal(dim(fit$v), c(p, r))
 })
@@ -81,9 +84,9 @@ test_that(".RobRSVD_all_weighted_R zeroes fully-masked rows and columns", {
 })
 
 test_that("missmda shrinkage warns when the spectrum has no noise tail", {
-  # EXPECTED-RED (audit F9): .shrink_singular_values silently returns the
-  # singular values unshrunk when length(singular_values) <= rank, so a caller
-  # that asked for "missmda" regularisation gets a no-op with no signal.
+  # Regression for audit F9: .shrink_singular_values now warns
+  # (rajiveplus_shrinkage_inert) when length(singular_values) <= rank instead
+  # of silently returning the unshrunk spectrum.
   sv <- c(8, 4, 2)
   expect_warning(
     rajiveplus:::.shrink_singular_values(
@@ -95,9 +98,9 @@ test_that("missmda shrinkage warns when the spectrum has no noise tail", {
 })
 
 test_that(".RobRSVD_all_weighted_R reports its convergence status", {
-  # EXPECTED-RED (audit F4): the weighted EM loop returns only d/u/v -- no
-  # iteration count or convergence flag -- so callers cannot tell whether the
-  # hardcoded 100-iteration cap was hit before the objective stabilised.
+  # Regression for audit F4: the weighted EM loop now returns `n_iter` and
+  # `converged` alongside d/u/v so callers can tell whether the iteration cap
+  # was hit before the objective stabilised.
   set.seed(9305)
   data <- matrix(stats::rnorm(60), 12L, 5L)
   mask <- matrix(TRUE, 12L, 5L)

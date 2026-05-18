@@ -66,6 +66,20 @@
   singular values using a discarded-singular-value noise estimate inspired by
   missMDA's regularized imputation algorithms.
 
+- Native missing-data fitting now iterates the block signal SVDs, joint SVD,
+  masked joint solve, and individual SVDs in an outer EM loop. Completed blocks
+  are re-centered and re-scaled each iteration; missing cells are updated from
+  the full reconstruction while observed cells remain fixed. The weighted
+  missing-data SVD path now uses robust completed-matrix updates, reports
+  convergence metadata, and is controlled by new `max_iter`, `tol`, and
+  `warn_nonconvergence` options in `rajive_missing_control()`.
+
+- Seeded native missing-data fits and rank diagnostics now preserve the
+  caller's RNG state. Native diagnostics clamp residual variance proportions to
+  non-negative values, all-block-missing samples are dropped with a classed
+  warning instead of aborting the whole fit, and masked joint least-squares
+  solves now fall back defensively on singular systems.
+
 ## Statistical changes
 
 - `get_random_direction_bound_robustH()` now uses classical `base::svd()`

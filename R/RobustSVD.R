@@ -26,7 +26,10 @@
 
 RobRSVD.all <- function(data, nrank = min(dim(data)), svdinit = NULL,
                         weights = NULL, shrinkage = 0,
-                        shrinkage_coeff = 1)
+                        shrinkage_coeff = 1,
+                        max_iter = 100L,
+                        tol = 1e-7,
+                        warn_nonconvergence = FALSE)
 {
   if (!is.matrix(data)) {
     cli::cli_abort(
@@ -94,6 +97,9 @@ RobRSVD.all <- function(data, nrank = min(dim(data)), svdinit = NULL,
       }
     } else {
       return(.RobRSVD_all_weighted_R(data, weights, nrank = nrank,
+                                     max_iter = max_iter,
+                                     tol = tol,
+                                     warn_nonconvergence = warn_nonconvergence,
                                      shrinkage = shrinkage,
                                      shrinkage_coeff = shrinkage_coeff))
     }
@@ -102,13 +108,13 @@ RobRSVD.all <- function(data, nrank = min(dim(data)), svdinit = NULL,
     svdinit <- svd(data)
   }
 
-  out <- RobRSVD_all_cpp(
+  out <- suppressWarnings(RobRSVD_all_cpp(
     data   = data,
     nrank  = nrank,
     sinit1 = svdinit$d[1],
     uinit1 = svdinit$u[, 1, drop = TRUE],
     vinit1 = svdinit$v[, 1, drop = TRUE]
-  )
+  ))
   if (!identical(shrinkage, 0)) {
     if (is.numeric(shrinkage)) {
       out$d <- pmax(out$d - shrinkage, 0)
@@ -121,6 +127,28 @@ RobRSVD.all <- function(data, nrank = min(dim(data)), svdinit = NULL,
     }
   }
   out
+}
+
+.robust_rank_svd_completed <- function(x, rank) {
+  rank <- min(as.integer(rank), min(dim(x)))
+  if (rank <= 0L) {
+    return(list(
+      d = numeric(0L),
+      u = matrix(0, nrow = nrow(x), ncol = 0L),
+      v = matrix(0, nrow = ncol(x), ncol = 0L)
+    ))
+  }
+  tryCatch(
+    suppressWarnings(RobRSVD.all(x, nrank = rank, weights = NULL, shrinkage = 0)),
+    error = function(e) {
+      sv <- svd(x, nu = rank, nv = rank)
+      list(
+        d = sv$d[seq_len(rank)],
+        u = sv$u[, seq_len(rank), drop = FALSE],
+        v = sv$v[, seq_len(rank), drop = FALSE]
+      )
+    }
+  )
 }
 
 .normalize_svd_shrinkage <- function(shrinkage) {
@@ -149,7 +177,18 @@ RobRSVD.all <- function(data, nrank = min(dim(data)), svdinit = NULL,
   if (identical(shrinkage, 0)) return(d)
   if (is.numeric(shrinkage)) return(pmax(d - shrinkage, 0))
 
-  if (!identical(shrinkage, "missmda") || length(singular_values) <= rank) {
+  if (!identical(shrinkage, "missmda")) {
+    return(d)
+  }
+  if (length(singular_values) <= rank) {
+    # No discarded singular values means no noise tail to estimate sigma^2
+    # from; the missMDA shrinkage formula degenerates to a no-op. Warn rather
+    # than silently return the unshrunk spectrum (audit finding F9).
+    cli::cli_warn(
+      c("missMDA-style shrinkage has no discarded singular values to estimate the noise level.",
+        "i" = "The retained rank ({rank}) spans the whole spectrum; returning the singular values unshrunk."),
+      class = "rajiveplus_shrinkage_inert"
+    )
     return(d)
   }
   tail <- singular_values[-seq_len(rank)]
@@ -198,14 +237,27 @@ RobRSVD.all <- function(data, nrank = min(dim(data)), svdinit = NULL,
 
 .RobRSVD_all_weighted_R <- function(data, weights, nrank, max_iter = 100L,
                                     tol = 1e-7, shrinkage = 0,
-                                    shrinkage_coeff = 1) {
+                                    shrinkage_coeff = 1,
+                                    warn_nonconvergence = FALSE) {
   r <- min(as.integer(nrank), min(dim(data)))
   if (r <= 0L || !any(weights)) {
     return(list(
       d = numeric(0),
       u = matrix(0, nrow = nrow(data), ncol = 0L),
-      v = matrix(0, nrow = ncol(data), ncol = 0L)
+      v = matrix(0, nrow = ncol(data), ncol = 0L),
+      n_iter = 0L,
+      converged = TRUE,
+      objective = 0,
+      method = "weighted_robust_em"
     ))
+  }
+  max_iter <- as.integer(max_iter)
+  if (length(max_iter) != 1L || is.na(max_iter) || max_iter < 1L) {
+    max_iter <- 100L
+  }
+  tol <- as.numeric(tol)
+  if (length(tol) != 1L || is.na(tol) || !is.finite(tol) || tol <= 0) {
+    tol <- 1e-7
   }
 
   observed <- weights
@@ -219,12 +271,22 @@ RobRSVD.all <- function(data, nrank = min(dim(data)), svdinit = NULL,
   }
   filled[!is.finite(filled)] <- 0
 
+  # Iteration status surfaced through the return value (audit finding F4);
+  # callers can detect a fit that hit the iteration cap instead of converging.
   previous_objective <- Inf
+  converged <- FALSE
+  iter <- 0L
+  objective <- Inf
   for (iter in seq_len(max_iter)) {
-    sv <- svd(filled, nu = r, nv = r)
+    sv <- .robust_rank_svd_completed(filled, r)
     u <- sv$u[, seq_len(r), drop = FALSE]
+    spectrum <- if (identical(shrinkage, "missmda")) {
+      svd(filled, nu = 0, nv = 0)$d
+    } else {
+      sv$d
+    }
     d <- .shrink_singular_values(
-      sv$d, r, shrinkage, shrinkage_coeff,
+      spectrum, r, shrinkage, shrinkage_coeff,
       n_rows = nrow(data), n_cols = ncol(data)
     )
     v <- sv$v[, seq_len(r), drop = FALSE]
@@ -234,15 +296,21 @@ RobRSVD.all <- function(data, nrank = min(dim(data)), svdinit = NULL,
     filled[observed] <- data[observed]
     if (is.finite(previous_objective) &&
         abs(previous_objective - objective) <= tol * (abs(previous_objective) + tol)) {
+      converged <- TRUE
       break
     }
     previous_objective <- objective
   }
 
-  sv <- svd(filled, nu = r, nv = r)
+  sv <- .robust_rank_svd_completed(filled, r)
   u <- sv$u[, seq_len(r), drop = FALSE]
+  spectrum <- if (identical(shrinkage, "missmda")) {
+    svd(filled, nu = 0, nv = 0)$d
+  } else {
+    sv$d
+  }
   d <- .shrink_singular_values(
-    sv$d, r, shrinkage, shrinkage_coeff,
+    spectrum, r, shrinkage, shrinkage_coeff,
     n_rows = nrow(data), n_cols = ncol(data)
   )
   v <- sv$v[, seq_len(r), drop = FALSE]
@@ -252,7 +320,16 @@ RobRSVD.all <- function(data, nrank = min(dim(data)), svdinit = NULL,
   if (any(fully_masked_rows)) u[fully_masked_rows, ] <- 0
   if (any(fully_masked_cols)) v[fully_masked_cols, ] <- 0
 
-  list(d = d, u = u, v = v)
+  if (!isTRUE(converged) && isTRUE(warn_nonconvergence)) {
+    cli::cli_warn(
+      c("Weighted robust SVD completion reached the iteration cap before convergence.",
+        "i" = "max_iter = {max_iter}, final objective = {signif(objective, 4)}."),
+      class = "rajiveplus_native_missing_no_converge"
+    )
+  }
+
+  list(d = d, u = u, v = v, n_iter = iter, converged = converged,
+       objective = objective, method = "weighted_robust_em")
 }
 
 

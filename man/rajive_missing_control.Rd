@@ -13,6 +13,9 @@ rajive_missing_control(
   rank_repeats = 5L,
   svd_shrinkage = 0,
   svd_shrinkage_coeff = 1,
+  max_iter = 5L,
+  tol = 0.01,
+  warn_nonconvergence = FALSE,
   n_refits = 5L,
   censoring = NULL,
   sensitivity = NULL
@@ -41,6 +44,16 @@ singular values.}
 
 \item{svd_shrinkage_coeff}{Positive coefficient for \code{svd_shrinkage =
 "missmda"}. Values above 1 shrink more strongly.}
+
+\item{max_iter}{Maximum iterations for the native outer completion loop and
+weighted SVD completion subproblems.}
+
+\item{tol}{Relative convergence tolerance for native missing-data completion
+objectives.}
+
+\item{warn_nonconvergence}{Logical; emit classed warnings when native
+completion subproblems reach \code{max_iter}. Convergence status is always
+recorded in the fit object.}
 
 \item{n_refits}{Number of aligned refits for \code{uncertainty =
 "bootstrap"} or \code{"mi"}.}

@@ -38,8 +38,8 @@ test_that("weighted robust SVD ignores corrupted masked cells", {
   b <- rajiveplus:::RobRSVD.all(X_corrupt, nrank = 2, weights = W)
 
   expect_equal(a$d, b$d, tolerance = 1e-8)
-  expect_equal(abs(crossprod(a$u, b$u)), diag(2), tolerance = 1e-6)
-  expect_equal(abs(crossprod(a$v, b$v)), diag(2), tolerance = 1e-6)
+  expect_equal(a$u, b$u, tolerance = 1e-8)
+  expect_equal(a$v, b$v, tolerance = 1e-8)
 })
 
 test_that("weighted robust SVD handles fully masked rows and columns", {

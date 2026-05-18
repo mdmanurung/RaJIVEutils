@@ -91,6 +91,19 @@ test_that("incomplete core records finite convergence diagnostics", {
 
   expect_true(is.finite(fit$missing$convergence$objective))
   expect_equal(length(fit$missing$convergence$block_objective), 2L)
+  expect_true(fit$missing$convergence$outer_em)
+  expect_equal(fit$missing$convergence$preprocessing, "completed_recentered")
+  expect_true(is.data.frame(fit$missing$convergence$history))
+  expect_true(all(c("n_iter", "converged", "raw_objective") %in%
+                    names(fit$missing$convergence)))
+})
+
+test_that("native missing control exposes completion iteration settings", {
+  ctrl <- rajive_missing_control(max_iter = 2L, tol = 0.25,
+                                 warn_nonconvergence = TRUE)
+  expect_equal(ctrl$max_iter, 2L)
+  expect_equal(ctrl$tol, 0.25)
+  expect_true(ctrl$warn_nonconvergence)
 })
 
 test_that("native missing fits support full false with missing cells", {

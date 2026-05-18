@@ -1,8 +1,8 @@
 # Edge-case tests for native automatic rank selection, hold-out diagnostics,
 # and RNG hygiene. See audits/2026-05-15-missing-data-audit.md.
 #
-# Tests tagged `# EXPECTED-RED (audit F#)` are written against *desired*
-# behaviour and fail until R/missing_data.R is fixed; they are kept active.
+# Tests tagged `# Regression for audit F#` pin a behaviour that was a
+# confirmed audit gap and turned green once the corresponding fix landed.
 #
 # make_union_blocks() is defined in helper-missing-union.R.
 
@@ -73,9 +73,8 @@ test_that("auto-rank selection is reproducible with a fixed seed", {
 })
 
 test_that("diagnose_missing_ranks does not mutate the global RNG state", {
-  # EXPECTED-RED (audit F7): diagnose_missing_ranks() calls bare set.seed()
-  # with no restore, so passing `seed=` silently overwrites the caller's RNG
-  # stream. Desired: a self-contained RNG (e.g. withr::local_seed).
+  # Regression for audit F7: passing `seed=` is scoped to the call and the
+  # caller's RNG stream survives.
   ub <- make_union_blocks(n = 18L, n_features = c(8L, 8L, 8L))
   set.seed(321)
   before <- .Random.seed
